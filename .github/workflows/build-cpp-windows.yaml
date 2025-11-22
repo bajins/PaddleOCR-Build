@@ -30,11 +30,11 @@ jobs:
       uses: lukka/run-vcpkg@v11
       with:
         vcpkgDirectory: '${{ runner.temp }}/vcpkg'
-        packages: |
-          freetype:x64-windows-static
-          harfbuzz:x64-windows-static
+        runVcpkgInstall: true
+        vcpkgJsonGlob: '**/vcpkg.json'
       env:
-        RUNVCPKG_VCPKG_VERSION: '2025-10-17'  # 最新稳定版 (2025-11-22 确认)
+        VCPKG_DEFAULT_TRIPLET: x64-windows-static
+        VCPKG_DEFAULT_HOST_TRIPLET: x64-windows-static
 
     - name: Clone PaddleOCR source
       run: git clone https://github.com/PaddlePaddle/PaddleOCR.git
