@@ -50,9 +50,11 @@ jobs:
         cd $vcpkgTemp
         .\bootstrap-vcpkg.bat
         $env:VCPKG_DEFAULT_TRIPLET = "x64-windows-static"
-        $env:VCPKG_DEBUG = "1"  # 启用 debug 日志 (替代 --verbose)
-        # 安装全依赖链 (移除 --verbose)
-        .\vcpkg.exe install freetype harfbuzz icu graphite2 zlib libpng bzip2 --triplet x64-windows-static --head --clean-after-build
+        $env:VCPKG_DEBUG = "1"  # 启用 debug 日志
+        # 更新 ports 以修复 freetype URL bug
+        .\vcpkg.exe update
+        # 安装全依赖链 (锁定 freetype 稳定版，避免 --head 404)
+        .\vcpkg.exe install freetype@2.13.2 harfbuzz icu graphite2 zlib libpng bzip2 --triplet x64-windows-static --clean-after-build
         if ($LASTEXITCODE -ne 0) { exit 1 }
         .\vcpkg.exe integrate install
         Write-Output "vcpkg install complete. Toolchain: $vcpkgTemp\scripts\buildsystems\vcpkg.cmake"
@@ -64,6 +66,7 @@ jobs:
         git clone https://github.com/PaddlePaddle/PaddleOCR.git
         cd PaddleOCR
         git checkout release/3.2
+        if ($LASTEXITCODE -ne 0) { exit 1 }
 
     - name: Build Paddle Inference from source (3.2.0 CPU)
       shell: powershell
