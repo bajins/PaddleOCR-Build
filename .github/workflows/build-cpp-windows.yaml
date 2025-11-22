@@ -1,7 +1,12 @@
 name: Build PaddleOCR C++ (Windows CPU with Static OpenCV 4.7.0)
 
 on:
-  workflow_dispatch:  # 手动触发
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Release version (e.g., v1.0.0)'
+        required: true
+        type: string
   pull_request:
     branches: [ main ]  # 仅 PR 时自动触发
 
@@ -21,15 +26,15 @@ jobs:
       with:
         version: latest  # 使用最新 CMake (3.29+)
 
-    - name: Install vcpkg (for static dependencies like freetype)
-      shell: powershell
-      run: |
-        git clone https://github.com/Microsoft/vcpkg.git C:\vcpkg
-        .\vcpkg\bootstrap-vcpkg.bat
-        # 安装静态 freetype 和 harfbuzz (OpenCV freetype 依赖)
-        .\vcpkg\vcpkg.exe install freetype:x64-windows-static harfbuzz:x64-windows-static
-        # 集成 vcpkg 到 CMake
-        .\vcpkg\vcpkg.exe integrate install
+    - name: Install vcpkg with static dependencies (freetype & harfbuzz)
+      uses: lukka/run-vcpkg@v11
+      with:
+        vcpkgDirectory: '${{ runner.temp }}/vcpkg'
+        packages: |
+          freetype:x64-windows-static
+          harfbuzz:x64-windows-static
+      env:
+        RUNVCPKG_VCPKG_VERSION: '2025-10-17'  # 最新稳定版 (2025-11-22 确认)
 
     - name: Clone PaddleOCR source
       run: git clone https://github.com/PaddlePaddle/PaddleOCR.git
@@ -57,7 +62,7 @@ jobs:
         cmake C:\opencv_source `
           -G "Visual Studio 17 2022" `
           -A x64 `
-          -DCMAKE_TOOLCHAIN_FILE="C:\vcpkg\scripts\buildsystems\vcpkg.cmake" `
+          -DCMAKE_TOOLCHAIN_FILE="${{ runner.temp }}/vcpkg/scripts/buildsystems/vcpkg.cmake" `
           -DBUILD_SHARED_LIBS=OFF `
           -DWITH_FREETYPE=ON `
           -DBUILD_opencv_world=ON `
@@ -98,3 +103,41 @@ jobs:
           C:\opencv_install/  # 静态 OpenCV 库和头文件
           PaddleOCR/deploy/cpp_infer/paddle_inference/
         retention-days: 7
+
+  release:
+    needs: build
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write  # for creating release
+    steps:
+    - name: Download build artifacts
+      uses: actions/download-artifact@v4
+      with:
+        path: artifacts/
+        pattern: paddleocr-cpp-windows-static-build
+
+    - name: Zip artifacts for release
+      run: |
+        cd artifacts
+        zip -r paddleocr-build-${{ github.event.inputs.version }}.zip .
+        # 移动 ZIP 到根目录
+        mv paddleocr-build-${{ github.event.inputs.version }}.zip ../
+
+    - name: Create GitHub Release
+      uses: softprops/action-gh-release@v2
+      with:
+        tag_name: ${{ github.event.inputs.version }}
+        name: PaddleOCR C++ Build ${{ github.event.inputs.version }}
+        body: |
+          ## PaddleOCR C++ Windows CPU Build
+          
+          - **OpenCV**: 4.7.0 (static, with freetype/harfbuzz)
+          - **Paddle Inference**: v3.0.0 CPU
+          - **Artifacts**: ppocr.exe, DLLs, libs, headers
+          
+          Download `paddleocr-build-${{ github.event.inputs.version }}.zip` for deployment.
+        draft: false
+        prerelease: false
+        files: paddleocr-build-${{ github.event.inputs.version }}.zip
+        generate_release_notes: false

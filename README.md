@@ -2,16 +2,18 @@
 
 ## 项目描述
 
-这是一个自动化构建 PaddleOCR C++ 版本的 GitHub Actions 项目，针对 Windows CPU 环境（支持 Windows 7 及以上版本）。项目从 PaddleOCR 官方仓库克隆源码，使用 Visual Studio 2022 和 CMake 编译生成静态链接的 OCR 可执行文件（ppocr.exe）和库文件。
+这是一个自动化构建 PaddleOCR C++ 版本的 GitHub Actions 项目，针对 Windows CPU 环境（支持 Windows 7 及以上版本）。项目从 PaddleOCR 官方仓库克隆源码，使用 Visual Studio 2022 和 CMake 编译生成静态链接的 OCR 可执行文件（ppocr.exe）和库文件
 
 主要特性 ：
 * 从源码编译 OpenCV 4.7.0：启用 freetype 和 harfbuzz 支持（用于文本渲染），优先静态库（减少 DLL 依赖）。
 * Paddle Inference v3.0.0 CPU：官方预编译包，确保兼容性。
 * 静态优先：OpenCV 和依赖（如 freetype）静态链接，运行时仅需少量 Paddle DLL。
-* 自动化 CI/CD：Push 到 main 分支时自动触发构建，产物作为 artifact 上传。
+* 手动触发 CI/CD：支持手动触发构建（workflow_dispatch），避免自动 push 触发；可选自动触发 pull request。
+* 自动发布：构建成功后，自动创建一个 GitHub Release（基于手动输入的版本号），便于下载构建产物作为 release asset。
 * 本地部署友好：生成的 ppocr.exe 可直接在 Windows 机器上运行 OCR 任务。
 
-注意：不支持 Windows XP SP3（PaddleOCR 和 OpenCV 官方不兼容）。
+
+注意：不支持 Windows XP SP3（PaddleOCR 和 OpenCV 官方不兼容）。构建时间约 20-40 分钟（OpenCV 源码编译耗时）。
 
 
 ## 先决条件
