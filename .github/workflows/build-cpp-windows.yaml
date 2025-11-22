@@ -8,7 +8,7 @@ on:
         required: true
         type: string
   pull_request:
-    branches: [ main ]  # 仅 PR 时自动触发
+    branches: [ main ]
 
 jobs:
   build:
@@ -24,17 +24,23 @@ jobs:
     - name: Install CMake
       uses: lukka/get-cmake@latest
       with:
-        version: latest  # 使用最新 CMake (3.29+)
+        version: latest
 
-    - name: Install vcpkg with static dependencies (freetype & harfbuzz)
-      uses: lukka/run-vcpkg@v11
-      with:
-        vcpkgDirectory: '${{ runner.temp }}/vcpkg'
-        runVcpkgInstall: true
-        vcpkgJsonGlob: '**/vcpkg.json'
-      env:
-        VCPKG_DEFAULT_TRIPLET: x64-windows-static
-        VCPKG_DEFAULT_HOST_TRIPLET: x64-windows-static
+    - name: Manual Install vcpkg with static dependencies (full chain for harfbuzz)
+      shell: powershell
+      run: |
+        $vcpkgTemp = "${{ runner.temp }}/vcpkg"
+        if (Test-Path $vcpkgTemp) { Remove-Item $vcpkgTemp -Recurse -Force }
+        git clone https://github.com/Microsoft/vcpkg.git $vcpkgTemp
+        cd $vcpkgTemp
+        .\bootstrap-vcpkg.bat
+        $env:VCPKG_DEFAULT_TRIPLET = "x64-windows-static"
+        # 安装全依赖链 (harfbuzz 需要 icu/graphite2/zlib/png/bzip2 等)
+        .\vcpkg.exe install freetype harfbuzz icu graphite2 zlib libpng bzip2 --triplet x64-windows-static --head --verbose --clean-after-build
+        .\vcpkg.exe integrate install
+        Write-Output "vcpkg install complete. Toolchain: $vcpkgTemp\scripts\buildsystems\vcpkg.cmake"
+        # 验证
+        .\vcpkg.exe list | Select-String "freetype|harfbuzz|icu|graphite2"
 
     - name: Clone PaddleOCR source
       run: git clone https://github.com/PaddlePaddle/PaddleOCR.git
@@ -42,13 +48,13 @@ jobs:
     - name: Download Paddle Inference (Windows CPU v3.0.0)
       shell: powershell
       run: |
-        Invoke-WebRequest -Uri "https://paddle-inference-lib.bj.bcebos.com/3.0.0/cxx_c/Windows/CPU/x86-64_avx-mkl-vs2019/paddle_inference.zip" -OutFile "paddle_inference.zip"
+        Invoke-WebRequest -Uri "https://paddle-inference-lib.bj.bcebos.com/3.0.0/cxx_c/Windows/CPU/x86-64_avx-mkl-vs2019/paddle_inference.zip" -OutFile "paddle_inference.zip" -UseBasicParsing
         Expand-Archive -Path "paddle_inference.zip" -DestinationPath "C:\paddle_inference"
 
     - name: Download dirent.h and copy to VS include
       shell: powershell
       run: |
-        Invoke-WebRequest -Uri "https://paddleocr.bj.bcebos.com/deploy/cpp_infer/cpp_files/dirent.h" -OutFile "dirent.h"
+        Invoke-WebRequest -Uri "https://paddleocr.bj.bcebos.com/deploy/cpp_infer/cpp_files/dirent.h" -OutFile "dirent.h" -UseBasicParsing
         $vsInclude = "${env:VSINSTALLDIR}Auxiliary\VS\include"
         Copy-Item "dirent.h" -Destination $vsInclude -Force
         Write-Output "Copied dirent.h to $vsInclude"
@@ -56,42 +62,51 @@ jobs:
     - name: Clone and build OpenCV 4.7.0 from source (static with freetype)
       shell: powershell
       run: |
+        $vcpkgTemp = "${{ runner.temp }}/vcpkg"
+        $vcpkgToolchain = "$vcpkgTemp\scripts\buildsystems\vcpkg.cmake"
+        $freetypeInclude = "$vcpkgTemp\installed\x64-windows-static\include"
+        $freetypeLib = "$vcpkgTemp\installed\x64-windows-static\lib\freetype.lib"
         git clone https://github.com/opencv/opencv.git C:\opencv_source -b 4.7.0
         mkdir C:\opencv_build
         cd C:\opencv_build
         cmake C:\opencv_source `
           -G "Visual Studio 17 2022" `
           -A x64 `
-          -DCMAKE_TOOLCHAIN_FILE="${{ runner.temp }}/vcpkg/scripts/buildsystems/vcpkg.cmake" `
+          -DCMAKE_TOOLCHAIN_FILE=$vcpkgToolchain `
           -DBUILD_SHARED_LIBS=OFF `
           -DWITH_FREETYPE=ON `
+          -DFREETYPE_INCLUDE_DIRS=$freetypeInclude `
+          -DFREETYPE_LIBRARY=$freetypeLib `
           -DBUILD_opencv_world=ON `
           -DCMAKE_BUILD_TYPE=Release `
           -DCMAKE_INSTALL_PREFIX="C:\opencv_install"
         msbuild /p:Configuration=Release /p:Platform=x64 /m /maxcpucount:4 INSTALL.vcxproj
-        # 验证 freetype 支持 (检查日志中 "freetype2: YES")
         Write-Output "OpenCV static build completed. Install dir: C:\opencv_install"
+        # 检查 freetype 支持 (fallback 手动路径防检测失败)
+        Select-String -Path CMakeCache.txt -Pattern "FREETYPE" | Write-Output
 
     - name: Configure and build PaddleOCR C++ demo
       shell: powershell
       run: |
+        $vcpkgTemp = "${{ runner.temp }}/vcpkg"
+        $vcpkgToolchain = "$vcpkgTemp\scripts\buildsystems\vcpkg.cmake"
         cd PaddleOCR\deploy\cpp_infer
         mkdir build
         cd build
         cmake .. -G "Visual Studio 17 2022" -A x64 `
+          -DCMAKE_TOOLCHAIN_FILE=$vcpkgToolchain `
           -DOPENCV_DIR="C:\opencv_install" `
           -DOpenCV_DIR="C:\opencv_install" `
           -DPADDLE_LIB="C:\paddle_inference\paddle\lib"
         msbuild ppocr.sln /p:Configuration=Release /p:Platform=x64 /m
 
-    - name: Copy runtime files to Release folder (static libs already linked)
+    - name: Copy runtime files to Release folder
       shell: powershell
       run: |
         $releaseDir = "PaddleOCR\deploy\cpp_infer\build\Release"
-        # Paddle DLLs (OpenCV 静态后无需 opencv dll)
-        Copy-Item "C:\paddle_inference\paddle\lib\paddle_inference.dll" -Destination $releaseDir
-        Copy-Item "C:\paddle_inference\paddle\lib\common.dll" -Destination $releaseDir
-        # 如果有其他生成 DLL，复制之
+        if (!(Test-Path $releaseDir)) { mkdir $releaseDir }
+        Copy-Item "C:\paddle_inference\paddle\lib\paddle_inference.dll" -Destination $releaseDir -Force
+        Copy-Item "C:\paddle_inference\paddle\lib\common.dll" -Destination $releaseDir -Force
         Write-Output "Files prepared in $releaseDir"
 
     - name: Upload build artifacts
@@ -100,7 +115,7 @@ jobs:
         name: paddleocr-cpp-windows-static-build
         path: |
           PaddleOCR/deploy/cpp_infer/build/Release/
-          C:\opencv_install/  # 静态 OpenCV 库和头文件
+          C:\opencv_install/
           PaddleOCR/deploy/cpp_infer/paddle_inference/
         retention-days: 7
 
@@ -109,7 +124,7 @@ jobs:
     if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     permissions:
-      contents: write  # for creating release
+      contents: write
     steps:
     - name: Download build artifacts
       uses: actions/download-artifact@v4
@@ -120,9 +135,7 @@ jobs:
     - name: Zip artifacts for release
       run: |
         cd artifacts
-        zip -r paddleocr-build-${{ github.event.inputs.version }}.zip .
-        # 移动 ZIP 到根目录
-        mv paddleocr-build-${{ github.event.inputs.version }}.zip ../
+        find . -type f -name "*.dll" -o -name "*.exe" -o -name "*.lib" -o -name "*.h" | xargs zip -r ../paddleocr-build-${{ github.event.inputs.version }}.zip
 
     - name: Create GitHub Release
       uses: softprops/action-gh-release@v2
@@ -137,7 +150,5 @@ jobs:
           - **Artifacts**: ppocr.exe, DLLs, libs, headers
           
           Download `paddleocr-build-${{ github.event.inputs.version }}.zip` for deployment.
-        draft: false
-        prerelease: false
         files: paddleocr-build-${{ github.event.inputs.version }}.zip
         generate_release_notes: false
