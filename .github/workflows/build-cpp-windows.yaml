@@ -1,0 +1,100 @@
+name: Build PaddleOCR C++ (Windows CPU with Static OpenCV 4.7.0)
+
+on:
+  workflow_dispatch:  # 手动触发
+  pull_request:
+    branches: [ main ]  # 仅 PR 时自动触发
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Setup MSBuild (Visual Studio 2022)
+      uses: microsoft/setup-msbuild@v2
+
+    - name: Install CMake
+      uses: lukka/get-cmake@latest
+      with:
+        version: latest  # 使用最新 CMake (3.29+)
+
+    - name: Install vcpkg (for static dependencies like freetype)
+      shell: powershell
+      run: |
+        git clone https://github.com/Microsoft/vcpkg.git C:\vcpkg
+        .\vcpkg\bootstrap-vcpkg.bat
+        # 安装静态 freetype 和 harfbuzz (OpenCV freetype 依赖)
+        .\vcpkg\vcpkg.exe install freetype:x64-windows-static harfbuzz:x64-windows-static
+        # 集成 vcpkg 到 CMake
+        .\vcpkg\vcpkg.exe integrate install
+
+    - name: Clone PaddleOCR source
+      run: git clone https://github.com/PaddlePaddle/PaddleOCR.git
+
+    - name: Download Paddle Inference (Windows CPU v3.0.0)
+      shell: powershell
+      run: |
+        Invoke-WebRequest -Uri "https://paddle-inference-lib.bj.bcebos.com/3.0.0/cxx_c/Windows/CPU/x86-64_avx-mkl-vs2019/paddle_inference.zip" -OutFile "paddle_inference.zip"
+        Expand-Archive -Path "paddle_inference.zip" -DestinationPath "C:\paddle_inference"
+
+    - name: Download dirent.h and copy to VS include
+      shell: powershell
+      run: |
+        Invoke-WebRequest -Uri "https://paddleocr.bj.bcebos.com/deploy/cpp_infer/cpp_files/dirent.h" -OutFile "dirent.h"
+        $vsInclude = "${env:VSINSTALLDIR}Auxiliary\VS\include"
+        Copy-Item "dirent.h" -Destination $vsInclude -Force
+        Write-Output "Copied dirent.h to $vsInclude"
+
+    - name: Clone and build OpenCV 4.7.0 from source (static with freetype)
+      shell: powershell
+      run: |
+        git clone https://github.com/opencv/opencv.git C:\opencv_source -b 4.7.0
+        mkdir C:\opencv_build
+        cd C:\opencv_build
+        cmake C:\opencv_source `
+          -G "Visual Studio 17 2022" `
+          -A x64 `
+          -DCMAKE_TOOLCHAIN_FILE="C:\vcpkg\scripts\buildsystems\vcpkg.cmake" `
+          -DBUILD_SHARED_LIBS=OFF `
+          -DWITH_FREETYPE=ON `
+          -DBUILD_opencv_world=ON `
+          -DCMAKE_BUILD_TYPE=Release `
+          -DCMAKE_INSTALL_PREFIX="C:\opencv_install"
+        msbuild /p:Configuration=Release /p:Platform=x64 /m /maxcpucount:4 INSTALL.vcxproj
+        # 验证 freetype 支持 (检查日志中 "freetype2: YES")
+        Write-Output "OpenCV static build completed. Install dir: C:\opencv_install"
+
+    - name: Configure and build PaddleOCR C++ demo
+      shell: powershell
+      run: |
+        cd PaddleOCR\deploy\cpp_infer
+        mkdir build
+        cd build
+        cmake .. -G "Visual Studio 17 2022" -A x64 `
+          -DOPENCV_DIR="C:\opencv_install" `
+          -DOpenCV_DIR="C:\opencv_install" `
+          -DPADDLE_LIB="C:\paddle_inference\paddle\lib"
+        msbuild ppocr.sln /p:Configuration=Release /p:Platform=x64 /m
+
+    - name: Copy runtime files to Release folder (static libs already linked)
+      shell: powershell
+      run: |
+        $releaseDir = "PaddleOCR\deploy\cpp_infer\build\Release"
+        # Paddle DLLs (OpenCV 静态后无需 opencv dll)
+        Copy-Item "C:\paddle_inference\paddle\lib\paddle_inference.dll" -Destination $releaseDir
+        Copy-Item "C:\paddle_inference\paddle\lib\common.dll" -Destination $releaseDir
+        # 如果有其他生成 DLL，复制之
+        Write-Output "Files prepared in $releaseDir"
+
+    - name: Upload build artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: paddleocr-cpp-windows-static-build
+        path: |
+          PaddleOCR/deploy/cpp_infer/build/Release/
+          C:\opencv_install/  # 静态 OpenCV 库和头文件
+          PaddleOCR/deploy/cpp_infer/paddle_inference/
+        retention-days: 7
