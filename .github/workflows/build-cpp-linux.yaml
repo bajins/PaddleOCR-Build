@@ -25,11 +25,63 @@ jobs:
       run: |
         sudo apt-get update
         # 安装基础编译工具
-        sudo apt-get install -y build-essential cmake git pkg-config
+        sudo apt-get install -y build-essential cmake git pkg-config yasm nasm wget unzip
         # OpenCV 依赖 (用于源码编译)
-        sudo apt-get install -y libgtk2.0-dev libavcodec-dev libavformat-dev libswscale-dev
+        sudo apt-get install -y libgtk2.0-dev libavcodec-dev libavformat-dev
+        sudo apt-get install -y libswscale-dev libjpeg-dev libpng-dev libtiff-dev
         # Freetype/Harfbuzz 依赖 (用于 OpenCV 绘制中文)
-        sudo apt-get install -y libfreetype6-dev libharfbuzz-dev libssl-dev wget unzip
+        sudo apt-get install -y libfreetype6-dev libharfbuzz-dev libssl-dev
+
+
+    # -----------------------------------------------------------------------
+    # 构建 OpenCV (静态库 + Freetype 支持)
+    # -----------------------------------------------------------------------
+    - name: Cache OpenCV Build
+      id: cache-opencv
+      uses: actions/cache@v3
+      with:
+        path: opencv_install
+        key: ${{ runner.os }}-opencv-4.7.0-freetype-v2
+
+    - name: Clone and Build OpenCV 4.7.0 (Static with Freetype)
+      if: steps.cache-opencv.outputs.cache-hit != 'true'
+      run: |
+        OPENCV_VER="4.7.0"
+        
+        git clone https://github.com/opencv/opencv.git opencv_source -b ${OPENCV_VER} --depth 1
+        # 下载 opencv_contrib 以支持 freetype (解决中文乱码)
+        git clone https://github.com/opencv/opencv_contrib.git opencv_contrib -b ${OPENCV_VER} --depth 1
+        
+        
+        # 下载 Core 和 Contrib (Contrib 包含 freetype 模块)
+        #wget -q https://github.com/opencv/opencv/archive/${OPENCV_VER}.zip -O opencv.zip
+        #unzip -q opencv.zip && mv opencv-${OPENCV_VER} opencv_source
+        
+        #wget -q https://github.com/opencv/opencv_contrib/archive/${OPENCV_VER}.zip -O opencv_contrib.zip
+        #unzip -q opencv_contrib.zip && mv opencv_contrib-${OPENCV_VER} opencv_contrib
+        
+        mkdir -p opencv_build
+        cd opencv_build
+        
+        cmake ../opencv_source \
+          -DCMAKE_BUILD_TYPE=Release \
+          -DCMAKE_INSTALL_PREFIX=${{ github.workspace }}/opencv_install \
+          -DOPENCV_EXTRA_MODULES_PATH=../opencv_contrib/modules \
+          -DBUILD_SHARED_LIBS=ON \
+          -DWITH_FREETYPE=ON \
+          -DWITH_GTK=ON \
+          -DWITH_QT=OFF \
+          -DBUILD_TESTS=OFF \
+          -DBUILD_PERF_TESTS=OFF \
+          -DBUILD_EXAMPLES=OFF \
+          -DBUILD_opencv_apps=OFF
+        
+        make -j$(nproc)
+        make install
+        
+        # 清理以节省空间
+        cd .. && rm -rf opencv_source opencv_contrib opencv_build *.zip
+
 
     # -----------------------------------------------------------------------
     # 选项 A: 下载官方预编译 Paddle Inference 库 (推荐，速度快)
@@ -73,50 +125,21 @@ jobs:
     #     make inference_lib_dist
     #     echo "PADDLE_LIB_DIR=$(pwd)/paddle_inference" >> $GITHUB_ENV
 
-    # -----------------------------------------------------------------------
-    # 构建 OpenCV (静态库 + Freetype 支持)
-    # -----------------------------------------------------------------------
-    - name: Cache OpenCV Build
-      id: cache-opencv
-      uses: actions/cache@v3
-      with:
-        path: opencv_install
-        key: ${{ runner.os }}-opencv-4.7.0-freetype-v2
-
-    - name: Clone and Build OpenCV 4.7.0 (Static with Freetype)
-      if: steps.cache-opencv.outputs.cache-hit != 'true'
-      run: |
-        git clone https://github.com/opencv/opencv.git opencv_source -b 4.7.0 --depth 1
-        # 下载 opencv_contrib 以支持 freetype (解决中文乱码)
-        git clone https://github.com/opencv/opencv_contrib.git opencv_contrib -b 4.7.0 --depth 1
-        
-        mkdir -p opencv_build
-        cd opencv_build
-        
-        cmake ../opencv_source \
-          -DCMAKE_BUILD_TYPE=Release \
-          -DCMAKE_INSTALL_PREFIX=${{ github.workspace }}/opencv_install \
-          -DOPENCV_EXTRA_MODULES_PATH=../opencv_contrib/modules \
-          -DBUILD_SHARED_LIBS=ON \
-          -DWITH_FREETYPE=ON \
-          -DBUILD_TESTS=OFF \
-          -DBUILD_PERF_TESTS=OFF \
-          -DBUILD_EXAMPLES=OFF \
-          -DWITH_QT=OFF \
-          -DWITH_GTK=ON
-        
-        make -j$(nproc)
-        make install
 
     # -----------------------------------------------------------------------
-    # 步骤 3: 编译 PaddleOCR C++ Demo
+    # 编译 PaddleOCR C++ Demo
     # 参考文档: https://www.paddleocr.ai/main/version3.x/deployment/cpp/OCR.html#step-2
     # -----------------------------------------------------------------------
     - name: Clone PaddleOCR
+      #uses: actions/checkout@v4
+      #with:
+      #  repository: PaddlePaddle/PaddleOCR
+      #  ref: v3.3.2
+      #  path: PaddleOCR
       run: |
         git clone https://github.com/PaddlePaddle/PaddleOCR.git
         cd PaddleOCR
-        git checkout release/3.3.2
+        git checkout release/3.3
         
     - name: Configure and Build PaddleOCR C++ Demo
       run: |
@@ -131,52 +154,62 @@ jobs:
         
         # PADDLE_LIB: 指向 paddle_inference 文件夹根目录
         # OPENCV_DIR: 指向包含 OpenCVConfig.cmake 的文件夹
+        # WITH_MKL=ON: 必须开启，因为下载的 inference lib 是 MKL 版
         cmake .. \
           -DPADDLE_LIB=${{ env.PADDLE_LIB_DIR }} \
+          -DOPENCV_DIR=${{ github.workspace }}/opencv_install/lib/cmake/opencv4 \
           -DWITH_MKL=ON \
           -DWITH_GPU=OFF \
           -DWITH_STATIC_LIB=OFF \
           -DWITH_TENSORRT=OFF \
-          -DOPENCV_DIR=${{ github.workspace }}/opencv_install/lib/cmake/opencv4 \
           -DCMAKE_BUILD_TYPE=Release
 
         make -j$(nproc)
         
         # 验证生成
         ls -lh ppocr
-        ./ppocr --help || echo "Binary built, showing help message logic"
+        ./ppocr --help || echo "Help menu check"
 
     # -----------------------------------------------------------------------
     # 打包发布
     # -----------------------------------------------------------------------
     - name: Prepare Artifacts
       run: |
-        mkdir -p release_package/lib
+        PKG_NAME="paddleocr-v3.3.2-linux-cpu-cpp"
+        mkdir -p $PKG_NAME/lib
+        mkdir -p $PKG_NAME/config
         
-        # 1. 可执行文件
-        cp PaddleOCR/deploy/cpp_infer/build/ppocr release_package/
+        BASE_DIR=$PKG_NAME
         
-        # 2. 必要的配置文件
-        cp PaddleOCR/deploy/cpp_infer/tools/config.txt release_package/config/ || true
-        cp PaddleOCR/deploy/cpp_infer/tools/*.txt release_package/ || true
+        # 1. 复制可执行文件
+        cp PaddleOCR/deploy/cpp_infer/build/ppocr $BASE_DIR/
         
-        # 3. Paddle Inference 依赖库 (.so 文件)
-        # 注意: Linux 下必须要将这些 .so 也就是动态库一起发布，或者要求用户安装
-        cp -L ${{ env.PADDLE_LIB_DIR }}/paddle/lib/*.so release_package/lib/
-        # 如果有 iomp5 或 mkl 库也需要复制
-        cp -L ${{ env.PADDLE_LIB_DIR }}/third_party/install/mklml/lib/*.so release_package/lib/ || true
-        cp -L ${{ env.PADDLE_LIB_DIR }}/third_party/install/mkldnn/lib/*.so* release_package/lib/ || true
+        # 2. 复制配置和资源文件
+        cp PaddleOCR/deploy/cpp_infer/tools/config.txt $BASE_DIR/config/ || true
+        cp PaddleOCR/deploy/cpp_infer/tools/*.txt $BASE_DIR/ || true
+        # 3.x 版本通常需要 tools 下的一些辅助文件
         
-        # 4. OpenCV 依赖库 (如果不是系统安装，最好也带上，或者让用户自己装)
-        cp -L ${{ github.workspace }}/opencv_install/lib/*.so* release_package/lib/
+        # 3. 复制 Paddle 依赖库 (.so)
+        # Paddle 核心库
+        cp -L ${{ env.PADDLE_LIB_DIR }}/paddle/lib/*.so* $BASE_DIR/lib/
+        # 第三方库 (MKL, MKLDNN, IOMP5 等)
+        # Paddle 3.2.2 结构中 third_party 通常包含这些
+        THIRD_PARTY="${{ env.PADDLE_LIB_DIR }}/third_party/install"
+        [ -d "$THIRD_PARTY/mklml/lib" ] && cp -L $THIRD_PARTY/mklml/lib/*.so* $BASE_DIR/lib/
+        [ -d "$THIRD_PARTY/mkldnn/lib" ] && cp -L $THIRD_PARTY/mkldnn/lib/*.so* $BASE_DIR/lib/
+        # 有时候 iomp5 在 mklml 里，有时单独
+        find $THIRD_PARTY -name "libiomp5.so" -exec cp {} $BASE_DIR/lib/ \;
         
-        # 创建启动脚本
-        echo '#!/bin/bash' > release_package/run.sh
-        echo 'export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:$(pwd)/lib' >> release_package/run.sh
-        echo './ppocr "$@"' >> release_package/run.sh
-        chmod +x release_package/run.sh
+        # 4. 复制 OpenCV 库
+        cp -L ${{ github.workspace }}/opencv_install/lib/*.so* $BASE_DIR/lib/
         
-        echo "Packaging complete."
+        # 5. 创建启动脚本 run.sh (自动设置 LD_LIBRARY_PATH)
+        echo '#!/bin/bash' > $BASE_DIR/run.sh
+        echo 'export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:$(dirname "$(readlink -f "$0")")/lib' >> $BASE_DIR/run.sh
+        echo './ppocr "$@"' >> $BASE_DIR/run.sh
+        chmod +x $BASE_DIR/run.sh
+        
+        echo "Artifacts packed in $BASE_DIR"
 
     - name: Upload build artifacts
       uses: actions/upload-artifact@v4
@@ -203,14 +236,21 @@ jobs:
           Built following official v3.x documentation.
           
           ### Requirements
-          - OS: Ubuntu 20.04 (Recommended) or System with OpenSSL 1.1 installed.
-          - GLIBC: Compatible with GCC 8.2+
+          - **PaddleOCR Version**: [v3.3.2](https://github.com/PaddlePaddle/PaddleOCR/releases/tag/v3.3.2)
+          - **Paddle Inference**: 3.2.2 (GCC 8.2 / AVX / MKL)
+          - **OpenCV**: 4.7.0 (Compiled with Freetype & GTK)
+          - **OS**: Ubuntu 20.04
           
-          ### How to run
-          1. Extract the zip.
-          2. Run `./run.sh system --image_dir=./your_images --det_model_dir=...`
+          ### 🚀 How to Run
           
-          ### Info
-          - **OpenCV**: 4.7.0 (with Freetype for Chinese rendering)
-          - **Paddle Inference**: 3.2.2 (CPU/MKL)
+          1. Download and unzip `paddleocr-linux-${{ github.event.inputs.version }}.zip`.
+          2. Use the `run.sh` script (no need to install libraries manually):
+          
+          ```bash
+          # Basic usage
+          ./run.sh system --image_dir=./path/to/image --det_model_dir=...
+          
+          # View help
+          ./run.sh --help
+          ```
         files: paddleocr-linux-${{ github.event.inputs.version }}.zip
