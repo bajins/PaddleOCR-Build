@@ -10,9 +10,12 @@ on:
   pull_request:
     branches: [ main ]
 
+# https://www.paddleocr.ai/main/version3.x/deployment/cpp/OCR.html
 jobs:
   build:
-    runs-on: ubuntu-latest
+    # 使用 ubuntu-20.04或ubuntu-18.04
+    # 原因: Paddle Inference 2.6.1 依赖 OpenSSL 1.1，而 ubuntu-22.04 默认是 OpenSSL 3.0，会导致运行时崩溃。
+    runs-on: ubuntu-20.04
 
     steps:
     - name: Checkout repository
@@ -21,8 +24,9 @@ jobs:
     - name: Install System Dependencies
       run: |
         sudo apt-get update
+        # 安装基础编译工具
         sudo apt-get install -y build-essential cmake git pkg-config
-        # OpenCV 依赖
+        # OpenCV 依赖 (用于源码编译)
         sudo apt-get install -y libgtk2.0-dev libavcodec-dev libavformat-dev libswscale-dev
         # Freetype/Harfbuzz 依赖 (用于 OpenCV 绘制中文)
         sudo apt-get install -y libfreetype6-dev libharfbuzz-dev libssl-dev wget unzip
@@ -36,12 +40,12 @@ jobs:
         cd paddle_inference_lib
         # 下载 Paddle Inference (GCC 8.2, CPU, MKL/OpenBLAS)
         # https://www.paddlepaddle.org.cn/inference/v3.0/guides/install/download_lib.html
-        wget -q https://paddle-inference-lib.bj.bcebos.com/3.0.0/cxx_c/Linux/CPU/gcc8.2_avx_mkl/paddle_inference.tgz
+        wget -q https://paddle-inference-lib.bj.bcebos.com/3.2.2/cxx_c/Linux/CPU/gcc8.2_avx_mkl/paddle_inference.tgz
         tar -xf paddle_inference.tgz
-        mv paddle_inference install_dir
-        echo "PADDLE_LIB_DIR=$(pwd)/install_dir" >> $GITHUB_ENV
+        # 结构通常是: paddle_inference/paddle/lib
+        echo "PADDLE_LIB_DIR=$(pwd)/paddle_inference" >> $GITHUB_ENV
         # 验证
-        ls -R install_dir/paddle/lib
+        ls -R paddle_inference/paddle/lib
 
     # -----------------------------------------------------------------------
     # 选项 B: 从源码编译 Paddle Inference (如果不使用预编译库，取消下方注释)
@@ -67,7 +71,7 @@ jobs:
     #       -DCMAKE_BUILD_TYPE=Release
     #     make -j$(nproc)
     #     make inference_lib_dist
-    #     echo "PADDLE_LIB_DIR=$(pwd)/paddle_inference_install_dir" >> $GITHUB_ENV
+    #     echo "PADDLE_LIB_DIR=$(pwd)/paddle_inference" >> $GITHUB_ENV
 
     # -----------------------------------------------------------------------
     # 构建 OpenCV (静态库 + Freetype 支持)
@@ -77,38 +81,39 @@ jobs:
       uses: actions/cache@v3
       with:
         path: opencv_install
-        key: ${{ runner.os }}-opencv-4.7.0-static-freetype-v1
+        key: ${{ runner.os }}-opencv-4.7.0-freetype-v2
 
     - name: Clone and Build OpenCV 4.7.0 (Static with Freetype)
       if: steps.cache-opencv.outputs.cache-hit != 'true'
       run: |
         git clone https://github.com/opencv/opencv.git opencv_source -b 4.7.0 --depth 1
+        # 下载 opencv_contrib 以支持 freetype (解决中文乱码)
+        git clone https://github.com/opencv/opencv_contrib.git opencv_contrib -b 4.7.0 --depth 1
+        
         mkdir -p opencv_build
         cd opencv_build
-        
-        # 定位 Freetype 路径 (Ubuntu 默认路径)
-        FREETYPE_INC="/usr/include/freetype2"
         
         cmake ../opencv_source \
           -DCMAKE_BUILD_TYPE=Release \
           -DCMAKE_INSTALL_PREFIX=${{ github.workspace }}/opencv_install \
-          -DBUILD_SHARED_LIBS=OFF \
+          -DOPENCV_EXTRA_MODULES_PATH=../opencv_contrib/modules \
+          -DBUILD_SHARED_LIBS=ON \
           -DWITH_FREETYPE=ON \
-          -DBUILD_opencv_world=ON \
           -DBUILD_TESTS=OFF \
           -DBUILD_PERF_TESTS=OFF \
           -DBUILD_EXAMPLES=OFF \
           -DWITH_QT=OFF \
-          -DWITH_GTK=OFF \
-          -DOPENCV_GENERATE_PKGCONFIG=ON
-          
+          -DWITH_GTK=ON
+        
         make -j$(nproc)
         make install
-        echo "OpenCV build complete."
 
+    # -----------------------------------------------------------------------
+    # 步骤 3: 编译 PaddleOCR C++ Demo
+    # 参考文档: https://www.paddleocr.ai/main/version3.x/deployment/cpp/OCR.html#step-2
+    # -----------------------------------------------------------------------
     - name: Clone PaddleOCR
       run: |
-        # https://www.paddleocr.ai/main/version3.x/deployment/cpp/OCR.html
         git clone https://github.com/PaddlePaddle/PaddleOCR.git
         cd PaddleOCR
         git checkout release/3.3.2
@@ -124,37 +129,54 @@ jobs:
         mkdir -p build
         cd build
         
+        # PADDLE_LIB: 指向 paddle_inference 文件夹根目录
+        # OPENCV_DIR: 指向包含 OpenCVConfig.cmake 的文件夹
         cmake .. \
-          -DOPENCV_DIR=${{ github.workspace }}/opencv_install/lib/cmake/opencv4 \
           -DPADDLE_LIB=${{ env.PADDLE_LIB_DIR }} \
           -DWITH_MKL=ON \
           -DWITH_GPU=OFF \
           -DWITH_STATIC_LIB=OFF \
+          -DWITH_TENSORRT=OFF \
+          -DOPENCV_DIR=${{ github.workspace }}/opencv_install/lib/cmake/opencv4 \
           -DCMAKE_BUILD_TYPE=Release
 
         make -j$(nproc)
         
         # 验证生成
         ls -lh ppocr
+        ./ppocr --help || echo "Binary built, showing help message logic"
 
+    # -----------------------------------------------------------------------
+    # 打包发布
+    # -----------------------------------------------------------------------
     - name: Prepare Artifacts
       run: |
         mkdir -p release_package/lib
         
-        # 复制可执行文件
+        # 1. 可执行文件
         cp PaddleOCR/deploy/cpp_infer/build/ppocr release_package/
         
-        # 复制配置和模型文件 (示例)
-        cp -r PaddleOCR/deploy/cpp_infer/tools release_package/ || true
-        cp -r PaddleOCR/deploy/cpp_infer/docs release_package/ || true
+        # 2. 必要的配置文件
+        cp PaddleOCR/deploy/cpp_infer/tools/config.txt release_package/config/ || true
+        cp PaddleOCR/deploy/cpp_infer/tools/*.txt release_package/ || true
         
-        # 复制 Paddle 依赖库 (即使是静态编译，Paddle 核心库通常是 .so)
-        cp ${{ env.PADDLE_LIB_DIR }}/paddle/lib/libpaddle_inference.so release_package/lib/
+        # 3. Paddle Inference 依赖库 (.so 文件)
+        # 注意: Linux 下必须要将这些 .so 也就是动态库一起发布，或者要求用户安装
+        cp -L ${{ env.PADDLE_LIB_DIR }}/paddle/lib/*.so release_package/lib/
         # 如果有 iomp5 或 mkl 库也需要复制
-        cp ${{ env.PADDLE_LIB_DIR }}/third_party/install/mklml/lib/*.so release_package/lib/ || true
-        cp ${{ env.PADDLE_LIB_DIR }}/third_party/install/mkldnn/lib/*.so* release_package/lib/ || true
+        cp -L ${{ env.PADDLE_LIB_DIR }}/third_party/install/mklml/lib/*.so release_package/lib/ || true
+        cp -L ${{ env.PADDLE_LIB_DIR }}/third_party/install/mkldnn/lib/*.so* release_package/lib/ || true
         
-        echo "Artifacts prepared in release_package/"
+        # 4. OpenCV 依赖库 (如果不是系统安装，最好也带上，或者让用户自己装)
+        cp -L ${{ github.workspace }}/opencv_install/lib/*.so* release_package/lib/
+        
+        # 创建启动脚本
+        echo '#!/bin/bash' > release_package/run.sh
+        echo 'export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:$(pwd)/lib' >> release_package/run.sh
+        echo './ppocr "$@"' >> release_package/run.sh
+        chmod +x release_package/run.sh
+        
+        echo "Packaging complete."
 
     - name: Upload build artifacts
       uses: actions/upload-artifact@v4
@@ -176,17 +198,19 @@ jobs:
         tag_name: ${{ github.event.inputs.version }}
         name: PaddleOCR C++ Linux Build ${{ github.event.inputs.version }}
         body: |
-          ## PaddleOCR C++ Linux CPU Build
+          ## PaddleOCR C++ Linux (Ubuntu 20.04) Build
           
-          - **OS**: Ubuntu 22.04 (via GitHub Actions)
-          - **OpenCV**: 4.7.0 (Static with Freetype)
-          - **Paddle Inference**: 2.6.1 (Official Prebuilt CPU/MKL)
-          - **Artifacts**: ppocr executable, libs
+          Built following official v3.x documentation.
           
-          ### Usage
-          Ensure `lib/` is in `LD_LIBRARY_PATH`:
-          ```bash
-          export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:$(pwd)/lib
-          ./ppocr system --image_dir=...
-          ```
+          ### Requirements
+          - OS: Ubuntu 20.04 (Recommended) or System with OpenSSL 1.1 installed.
+          - GLIBC: Compatible with GCC 8.2+
+          
+          ### How to run
+          1. Extract the zip.
+          2. Run `./run.sh system --image_dir=./your_images --det_model_dir=...`
+          
+          ### Info
+          - **OpenCV**: 4.7.0 (with Freetype for Chinese rendering)
+          - **Paddle Inference**: 3.2.2 (CPU/MKL)
         files: paddleocr-linux-${{ github.event.inputs.version }}.zip
