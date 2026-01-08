@@ -13,9 +13,10 @@ on:
 # https://www.paddleocr.ai/main/version3.x/deployment/cpp/OCR.html
 jobs:
   build:
-    # 使用 ubuntu-20.04或ubuntu-18.04
+    # https://docs.github.com/en/actions/concepts/runners/github-hosted-runners
+    # https://github.com/actions/runner-images
     # 原因: Paddle Inference 2.6.1 依赖 OpenSSL 1.1，而 ubuntu-22.04 默认是 OpenSSL 3.0，会导致运行时崩溃。
-    runs-on: ubuntu-18.04
+    runs-on: ubuntu-20.04
 
     steps:
     - name: Checkout repository
