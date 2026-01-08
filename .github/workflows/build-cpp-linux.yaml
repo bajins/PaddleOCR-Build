@@ -15,7 +15,7 @@ jobs:
   build:
     # 使用 ubuntu-20.04或ubuntu-18.04
     # 原因: Paddle Inference 2.6.1 依赖 OpenSSL 1.1，而 ubuntu-22.04 默认是 OpenSSL 3.0，会导致运行时崩溃。
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-18.04
 
     steps:
     - name: Checkout repository
@@ -31,8 +31,6 @@ jobs:
         sudo apt-get install -y libswscale-dev libjpeg-dev libpng-dev libtiff-dev
         # Freetype/Harfbuzz 依赖 (用于 OpenCV 绘制中文)
         sudo apt-get install -y libfreetype6-dev libharfbuzz-dev libssl-dev
-
-
     # -----------------------------------------------------------------------
     # 构建 OpenCV (静态库 + Freetype 支持)
     # -----------------------------------------------------------------------
@@ -81,8 +79,6 @@ jobs:
         
         # 清理以节省空间
         cd .. && rm -rf opencv_source opencv_contrib opencv_build *.zip
-
-
     # -----------------------------------------------------------------------
     # 选项 A: 下载官方预编译 Paddle Inference 库 (推荐，速度快)
     # -----------------------------------------------------------------------
@@ -98,7 +94,6 @@ jobs:
         echo "PADDLE_LIB_DIR=$(pwd)/paddle_inference" >> $GITHUB_ENV
         # 验证
         ls -R paddle_inference/paddle/lib
-
     # -----------------------------------------------------------------------
     # 选项 B: 从源码编译 Paddle Inference (如果不使用预编译库，取消下方注释)
     # 注意: 在 GitHub Actions 免费 runner 上极易超时或内存溢出
@@ -108,7 +103,7 @@ jobs:
     #   run: |
     #     git clone https://github.com/PaddlePaddle/Paddle.git paddle_source
     #     cd paddle_source
-    #     git checkout release/3.2.2
+    #     git checkout release/3.3
     #
     # - name: Build Paddle Inference from Source
     #   working-directory: paddle_source
@@ -163,19 +158,18 @@ jobs:
           -DWITH_STATIC_LIB=OFF \
           -DWITH_TENSORRT=OFF \
           -DCMAKE_BUILD_TYPE=Release
-
         make -j$(nproc)
         
         # 验证生成
         ls -lh ppocr
         ./ppocr --help || echo "Help menu check"
-
+    
     # -----------------------------------------------------------------------
     # 打包发布
     # -----------------------------------------------------------------------
     - name: Prepare Artifacts
       run: |
-        PKG_NAME="paddleocr-v3.3.2-linux-cpu-cpp"
+        PKG_NAME="paddleocr-linux-cpu-cpp"
         mkdir -p $PKG_NAME/lib
         mkdir -p $PKG_NAME/config
         
@@ -193,7 +187,7 @@ jobs:
         # Paddle 核心库
         cp -L ${{ env.PADDLE_LIB_DIR }}/paddle/lib/*.so* $BASE_DIR/lib/
         # 第三方库 (MKL, MKLDNN, IOMP5 等)
-        # Paddle 3.2.2 结构中 third_party 通常包含这些
+        # Paddle 结构中 third_party 通常包含这些
         THIRD_PARTY="${{ env.PADDLE_LIB_DIR }}/third_party/install"
         [ -d "$THIRD_PARTY/mklml/lib" ] && cp -L $THIRD_PARTY/mklml/lib/*.so* $BASE_DIR/lib/
         [ -d "$THIRD_PARTY/mkldnn/lib" ] && cp -L $THIRD_PARTY/mkldnn/lib/*.so* $BASE_DIR/lib/
@@ -210,20 +204,33 @@ jobs:
         chmod +x $BASE_DIR/run.sh
         
         echo "Artifacts packed in $BASE_DIR"
-
-    - name: Upload build artifacts
-      uses: actions/upload-artifact@v4
-      with:
-        name: paddleocr-cpp-linux-build
-        path: release_package/
-        retention-days: 7
+    
+  #  - name: Upload build artifacts
+  #    uses: actions/upload-artifact@v4
+  #    with:
+  #      name: paddleocr-cpp-linux-build
+  #      path: release_package/
+  #      retention-days: 7
+  #  
+  #release:
+  #  needs: build
+  #  if: github.event_name == 'workflow_dispatch'
+  #  runs-on: ubuntu-latest
+  #  permissions:
+  #    contents: write
+  #  steps:
+  #  - name: Download build artifacts
+  #    uses: actions/download-artifact@v4
+  #    with:
+  #      path: release_package/
+  #      pattern: paddleocr-cpp-linux-build
 
     - name: Zip artifacts for release
       if: github.event_name == 'workflow_dispatch'
       run: |
         cd release_package
-        zip -r ../paddleocr-linux-${{ github.event.inputs.version }}.zip .
-
+        zip -r ../paddleocr-linux-${{ github.event.inputs.version }}.zip . --exclude "*.git*"
+    
     - name: Create GitHub Release
       if: github.event_name == 'workflow_dispatch'
       uses: softprops/action-gh-release@v2
