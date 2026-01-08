@@ -1,4 +1,4 @@
-name: Build PaddleOCR C++ (Linux CPU with Static OpenCV & Prebuilt Paddle Inference)
+name: Build PaddleOCR C++ (Linux CPU)
 
 on:
   workflow_dispatch:
@@ -15,7 +15,6 @@ jobs:
   build:
     # https://docs.github.com/en/actions/concepts/runners/github-hosted-runners
     # https://github.com/actions/runner-images
-    # 原因: Paddle Inference 2.6.1 依赖 OpenSSL 1.1，而 ubuntu-22.04 默认是 OpenSSL 3.0，会导致运行时崩溃。
     runs-on: ubuntu-latest
 
     steps:
@@ -32,6 +31,7 @@ jobs:
         sudo apt-get install -y libswscale-dev libjpeg-dev libpng-dev libtiff-dev
         # Freetype/Harfbuzz 依赖 (用于 OpenCV 绘制中文)
         sudo apt-get install -y libfreetype6-dev libharfbuzz-dev libssl-dev
+    
     # -----------------------------------------------------------------------
     # 构建 OpenCV (静态库 + Freetype 支持)
     # -----------------------------------------------------------------------
@@ -62,19 +62,34 @@ jobs:
         mkdir -p opencv_build
         cd opencv_build
         
+        # https://github.com/PaddlePaddle/PaddleOCR/raw/refs/heads/main/deploy/cpp_infer/tools/build_opencv.sh
         cmake ../opencv_source \
           -DCMAKE_BUILD_TYPE=Release \
           -DCMAKE_INSTALL_PREFIX=${{ github.workspace }}/opencv_install \
           -DOPENCV_EXTRA_MODULES_PATH=../opencv_contrib/modules \
-          -DBUILD_SHARED_LIBS=ON \
+          -DBUILD_opencv_freetype=ON \
           -DWITH_FREETYPE=ON \
+          -DBUILD_SHARED_LIBS=ON \
           -DWITH_GTK=ON \
           -DWITH_QT=OFF \
           -DBUILD_TESTS=OFF \
           -DBUILD_PERF_TESTS=OFF \
           -DBUILD_EXAMPLES=OFF \
           -DBUILD_opencv_apps=OFF \
-          -DBUILD_opencv_gapi=OFF
+          -DBUILD_opencv_gapi=OFF \
+          -DWITH_IPP=OFF \
+          -DBUILD_IPP_IW=OFF \
+          -DWITH_LAPACK=OFF \
+          -DWITH_EIGEN=OFF \
+          -DCMAKE_INSTALL_LIBDIR=lib64 \
+          -DWITH_ZLIB=ON \
+          -DBUILD_ZLIB=ON \
+          -DWITH_JPEG=ON \
+          -DBUILD_JPEG=ON \
+          -DWITH_PNG=ON \
+          -DBUILD_PNG=ON \
+          -DWITH_TIFF=ON \
+          -DBUILD_TIFF=ON
         
         make -j$(nproc)
         make install
@@ -105,9 +120,7 @@ jobs:
     # -----------------------------------------------------------------------
     # - name: Clone Paddle Source
     #   run: |
-    #     git clone https://github.com/PaddlePaddle/Paddle.git paddle_source
-    #     cd paddle_source
-    #     git checkout release/3.3
+    #     git clone https://github.com/PaddlePaddle/Paddle.git paddle_source -b release/3.3 --depth 1
     #
     # - name: Build Paddle Inference from Source
     #   working-directory: paddle_source
@@ -136,9 +149,7 @@ jobs:
       #  ref: v3.3.2
       #  path: PaddleOCR
       run: |
-        git clone https://github.com/PaddlePaddle/PaddleOCR.git
-        cd PaddleOCR
-        git checkout release/3.3
+        git clone https://github.com/PaddlePaddle/PaddleOCR.git -b release/3.3 --depth 1
         
     - name: Configure and Build PaddleOCR C++ Demo
       run: |
@@ -151,9 +162,12 @@ jobs:
         #tree -d ${{ github.workspace }}/opencv_install
         ls -l ${{ github.workspace }}/opencv_install/lib/cmake/opencv4
         
-        mkdir -p build
-        cd build
+        BUILD_DIR=build
+        rm -rf ${BUILD_DIR}
+        mkdir ${BUILD_DIR}
+        cd ${BUILD_DIR}
         
+        # https://github.com/PaddlePaddle/PaddleOCR/raw/refs/heads/main/deploy/cpp_infer/tools/build.sh
         # PADDLE_LIB: 指向 paddle_inference 文件夹根目录
         # OPENCV_DIR: 指向包含 OpenCVConfig.cmake 的文件夹
         # WITH_MKL=ON: 必须开启，因为下载的 inference lib 是 MKL 版
@@ -165,6 +179,7 @@ jobs:
           -DWITH_GPU=OFF \
           -DWITH_STATIC_LIB=OFF \
           -DWITH_TENSORRT=OFF \
+        #  -DUSE_FREETYPE=ON \
           -DCMAKE_BUILD_TYPE=Release
         
         make -j$(nproc)
