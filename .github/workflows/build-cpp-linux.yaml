@@ -151,19 +151,6 @@ jobs:
         #tree -d ${{ github.workspace }}/opencv_install
         ls -l ${{ github.workspace }}/opencv_install/lib/cmake/opencv4
         
-        # 自动查找 OpenCVConfig.cmake 的绝对路径
-        # 解释：不管是在 lib 还是 lib64，也不管目录叫 opencv4 还是 opencv，直接找到它
-        TARGET_FILE=$(find ${{ github.workspace }}/opencv_install -name "OpenCVConfig.cmake" -print -quit)
-        
-        if [ -z "$TARGET_FILE" ]; then
-          echo "❌ Error: Could not find OpenCVConfig.cmake in opencv_install!"
-          find ${{ github.workspace }}/opencv_install # 打印目录结构以便调试
-          exit 1
-        fi
-        
-        # 获取该文件所在的目录 (例如 .../lib/cmake/opencv4)
-        OPENCV_CONF_DIR=$(dirname "$TARGET_FILE")
-        
         mkdir -p build
         cd build
         
@@ -172,7 +159,8 @@ jobs:
         # WITH_MKL=ON: 必须开启，因为下载的 inference lib 是 MKL 版
         cmake .. \
           -DPADDLE_LIB=${{ env.PADDLE_LIB_DIR }} \
-          -DOPENCV_DIR=$OPENCV_CONF_DIR \
+          -DCMAKE_PREFIX_PATH=${{ github.workspace }}/opencv_install \
+          -DOPENCV_DIR=${{ github.workspace }}/opencv_install/lib/cmake/opencv4 \
           -DWITH_MKL=ON \
           -DWITH_GPU=OFF \
           -DWITH_STATIC_LIB=OFF \
