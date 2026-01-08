@@ -16,7 +16,7 @@ jobs:
     # https://docs.github.com/en/actions/concepts/runners/github-hosted-runners
     # https://github.com/actions/runner-images
     # 原因: Paddle Inference 2.6.1 依赖 OpenSSL 1.1，而 ubuntu-22.04 默认是 OpenSSL 3.0，会导致运行时崩溃。
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-20.04
 
     steps:
     - name: Checkout repository
@@ -42,7 +42,7 @@ jobs:
         path: opencv_install
         key: ${{ runner.os }}-opencv-4.7.0-freetype-v2
 
-    - name: Clone and Build OpenCV 4.7.0 (Static with Freetype)
+    - name: Clone and Build OpenCV 4.7.0
       if: steps.cache-opencv.outputs.cache-hit != 'true'
       run: |
         OPENCV_VER="4.7.0"
@@ -73,7 +73,8 @@ jobs:
           -DBUILD_TESTS=OFF \
           -DBUILD_PERF_TESTS=OFF \
           -DBUILD_EXAMPLES=OFF \
-          -DBUILD_opencv_apps=OFF
+          -DBUILD_opencv_apps=OFF \
+          -DBUILD_opencv_gapi=OFF
         
         make -j$(nproc)
         make install
