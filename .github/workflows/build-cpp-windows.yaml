@@ -98,7 +98,36 @@ jobs:
         Copy-Item "dirent.h" -Destination $localInclude -Force
         Write-Output "Fallback: Copied to local $localInclude"
     
-    - name: Clone and build OpenCV 4.7.0 from source (static with freetype)
+    #- name: Download and Setup OpenCV 4.7.0 Pre-built
+    #  shell: powershell
+    #  run: |
+    #    # 1. 下载官方预编译包
+    #    $url = "https://github.com/opencv/opencv/releases/download/4.7.0/opencv-4.7.0-windows.exe"
+    #    $outFile = "opencv-4.7.0-windows.exe"
+    #    Write-Output "Downloading OpenCV 4.7.0..."
+    #    Invoke-WebRequest -Uri $url -OutFile $outFile -UseBasicParsing
+    #
+    #    # 2. 使用 7z 解压 (比运行 exe 更稳健，不会弹出 GUI)
+    #    # -o"." 表示解压到当前目录，解压后会自动生成 opencv 文件夹
+    #    Write-Output "Extracting..."
+    #    7z x $outFile -o"." -y
+    #
+    #    # 3. 验证目录结构
+    #    $opencvDir = Resolve-Path "opencv"
+    #    $buildDir = "$opencvDir\build"
+    #    if (Test-Path "$buildDir\x64\vc16\lib") {
+    #        Write-Output "OpenCV extracted successfully to: $opencvDir"
+    #    } else {
+    #        Write-Error "OpenCV extraction failed or folder structure mismatch!"
+    #        exit 1
+    #    }
+    #
+    #    # 4. 设置环境变量供后续 CMake 使用
+    #    # 注意：VS2022 兼容 VS2019 的二进制文件 (vc16)
+    #    echo "OpenCV_DIR=$buildDir" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+    #    echo "OPENCV_DIR=$buildDir" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+    
+    - name: Clone and build OpenCV 4.7.0 from source
       shell: powershell
       run: |
         $vcpkgTemp = "${{ runner.temp }}/vcpkg"
@@ -144,7 +173,7 @@ jobs:
         # 2. 下载 Paddle Inference (Windows CPU, MKL, VS2019)
         # https://www.paddlepaddle.org.cn/inference/v3.0/guides/install/download_lib.html#windows
         # 注意：VS2019 编译的库通常兼容 VS2022
-        $url = "https://paddle-inference-lib.bj.bcebos.com/3.0.0/cxx_c/Windows/CPU/x86-64_avx-mkl-vs2019/paddle_inference.zip"
+        $url = "https://paddle-inference-lib.bj.bcebos.com/3.2.2/cxx_c/Windows/CPU/x86-64_avx-mkl-vs2019/paddle_inference.zip"
         $zipName = "paddle_inference.zip"
         
         Write-Output "Downloading from $url..."
@@ -152,10 +181,10 @@ jobs:
 
         # 3. 解压 Zip 文件
         Write-Output "Extracting $zipName..."
-        Expand-Archive -Path $zipName -DestinationPath . -Force
+        Expand-Archive -Path $zipName -DestinationPath paddle_inference -Force
 
         # 4. 设置环境变量 PADDLE_LIB_DIR
-        # 解压后通常目录结构为: paddle_inference_lib/paddle_inference/paddle/lib
+        # 解压后通常目录结构为: paddle_inference/paddle/lib
         $extractRoot = Resolve-Path "paddle_inference"
         $fullPath = $extractRoot.Path
         
