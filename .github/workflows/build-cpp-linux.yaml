@@ -26,7 +26,7 @@ jobs:
       run: |
         sudo apt-get update
         # 安装基础编译工具
-        sudo apt-get install -y build-essential cmake git pkg-config yasm nasm wget unzip
+        sudo apt-get install -y build-essential cmake git pkg-config yasm nasm wget unzip tree
         # OpenCV 依赖 (用于源码编译)
         sudo apt-get install -y libgtk2.0-dev libavcodec-dev libavformat-dev
         sudo apt-get install -y libswscale-dev libjpeg-dev libpng-dev libtiff-dev
@@ -147,8 +147,10 @@ jobs:
         # 如果使用的是预编译库，库结构可能略有不同
         # 预编译库路径: $PADDLE_LIB_DIR/paddle/lib/libpaddle_inference.so
         # OpenCV 路径: ${{ github.workspace }}/opencv_install
-        find ${{ env.PADDLE_LIB_DIR }} -print | sed -e 's/[^\/]*\//│  /g; s/│  \([^│]\)/├── \1/; s/│  $/└── /'
-        tree ${{ github.workspace }}/opencv_install
+        tree -d ${{ env.PADDLE_LIB_DIR }}
+        tree -d ${{ github.workspace }}/opencv_install
+        echo "Listing OpenCV install directory:"
+        ls -R ${{ github.workspace }}/opencv_install | grep "OpenCVConfig.cmake" || echo "Config file not found!"
         
         mkdir -p build
         cd build
@@ -158,12 +160,13 @@ jobs:
         # WITH_MKL=ON: 必须开启，因为下载的 inference lib 是 MKL 版
         cmake .. \
           -DPADDLE_LIB=${{ env.PADDLE_LIB_DIR }} \
-          -DOPENCV_DIR=${{ github.workspace }}/opencv_install \
+          -DOPENCV_DIR=${{ github.workspace }}/opencv_install/lib/cmake/opencv4 \
           -DWITH_MKL=ON \
           -DWITH_GPU=OFF \
           -DWITH_STATIC_LIB=OFF \
           -DWITH_TENSORRT=OFF \
           -DCMAKE_BUILD_TYPE=Release
+        
         make -j$(nproc)
         
         # 验证生成
