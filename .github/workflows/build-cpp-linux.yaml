@@ -81,6 +81,7 @@ jobs:
         
         # 清理以节省空间
         cd .. && rm -rf opencv_source opencv_contrib opencv_build *.zip
+    
     # -----------------------------------------------------------------------
     # 选项 A: 下载官方预编译 Paddle Inference 库 (推荐，速度快)
     # -----------------------------------------------------------------------
@@ -96,6 +97,7 @@ jobs:
         echo "PADDLE_LIB_DIR=$(pwd)/paddle_inference" >> $GITHUB_ENV
         # 验证
         ls -R paddle_inference/paddle/lib
+    
     # -----------------------------------------------------------------------
     # 选项 B: 从源码编译 Paddle Inference (如果不使用预编译库，取消下方注释)
     # 注意: 在 GitHub Actions 免费 runner 上极易超时或内存溢出
@@ -145,6 +147,8 @@ jobs:
         # 如果使用的是预编译库，库结构可能略有不同
         # 预编译库路径: $PADDLE_LIB_DIR/paddle/lib/libpaddle_inference.so
         # OpenCV 路径: ${{ github.workspace }}/opencv_install
+        find ${{ env.PADDLE_LIB_DIR }} -print | sed -e 's/[^\/]*\//│  /g; s/│  \([^│]\)/├── \1/; s/│  $/└── /'
+        tree ${{ github.workspace }}/opencv_install
         
         mkdir -p build
         cd build
@@ -154,7 +158,7 @@ jobs:
         # WITH_MKL=ON: 必须开启，因为下载的 inference lib 是 MKL 版
         cmake .. \
           -DPADDLE_LIB=${{ env.PADDLE_LIB_DIR }} \
-          -DOPENCV_DIR=${{ github.workspace }}/opencv_install/lib/cmake/opencv4 \
+          -DOPENCV_DIR=${{ github.workspace }}/opencv_install \
           -DWITH_MKL=ON \
           -DWITH_GPU=OFF \
           -DWITH_STATIC_LIB=OFF \
