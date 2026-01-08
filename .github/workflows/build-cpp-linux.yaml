@@ -159,8 +159,7 @@ jobs:
         # 预编译库路径: $PADDLE_LIB_DIR/paddle/lib/libpaddle_inference.so
         # OpenCV 路径: ${{ github.workspace }}/opencv_install
         #tree -d ${{ env.PADDLE_LIB_DIR }}
-        #tree -d ${{ github.workspace }}/opencv_install
-        ls -l ${{ github.workspace }}/opencv_install/lib/cmake/opencv4
+        tree -d ${{ github.workspace }}/opencv_install
         
         BUILD_DIR=build
         rm -rf ${BUILD_DIR}
