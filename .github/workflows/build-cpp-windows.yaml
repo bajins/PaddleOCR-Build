@@ -17,6 +17,13 @@ jobs:
     steps:
     - name: Checkout repository
       uses: actions/checkout@v4
+    
+    # 使用 ilammy/msvc-dev-cmd 自动配置并持久化 VS 环境变量
+    # 这解决了 UINT64_MAX 找不到的问题，因为后续步骤能正确找到 cl.exe 和头文件
+    - name: Setup MSVC Developer Command Prompt
+      uses: ilammy/msvc-dev-cmd@v1
+      with:
+        arch: x64
 
     - name: Setup MSBuild (Visual Studio 2022)
       uses: microsoft/setup-msbuild@v2
@@ -24,28 +31,29 @@ jobs:
     - name: Install CMake
       uses: lukka/get-cmake@latest
       with:
-        version: latest
+        version: 3.29
 
     - name: Setup VS Developer Environment
       shell: powershell
       run: |
         & "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvars64.bat"
         Write-Output "VS Developer env ready"
-
+    
     - name: Install Python 3.10 and deps
       shell: powershell
       run: |
-        # 安装 Python 3.10 (兼容指南)
+        # 安装 Python 3.10
         choco install python --version=3.10.0 -y
         $env:PATH = "C:\Python310;C:\Python310\Scripts;$env:PATH"
         python --version
         pip install numpy protobuf wheel ninja
-
+    
     #- name: Setup vcpkg
     #  uses: lukka/run-vcpkg@v11
     #  with:
     #    # 指定 vcpkg 的某个特定 commit hash，该 commit 对应的 ports 目录里 freetype 版本是 2.13.2
     #    vcpkgGitCommitId: '这里填写包含 freetype 2.13.2 的 commit hash'
+    
     - name: Manual Install vcpkg with static dependencies (full chain for harfbuzz)
       shell: powershell
       run: |
@@ -65,51 +73,16 @@ jobs:
         Write-Output "vcpkg install complete. Toolchain: $vcpkgTemp\scripts\buildsystems\vcpkg.cmake"
         # 验证
         .\vcpkg.exe list | Select-String "freetype|harfbuzz|icu|graphite2"
-
-    - name: Clone PaddleOCR source (release/3.2)
-      run: |
-        git clone https://github.com/PaddlePaddle/PaddleOCR.git
-        cd PaddleOCR
-        git checkout release/3.2
-        if ($LASTEXITCODE -ne 0) { exit 1 }
-
-    - name: Build Paddle Inference from source (3.2.0 CPU)
-      shell: powershell
-      run: |
-        $vcpkgTemp = "${{ runner.temp }}/vcpkg"
-        $vcpkgToolchain = "$vcpkgTemp\scripts\buildsystems\vcpkg.cmake"
-        mkdir C:\paddle_source
-        cd C:\paddle_source
-        git clone https://github.com/PaddlePaddle/Paddle.git .
-        git checkout release/3.2
-        if ($LASTEXITCODE -ne 0) { exit 1 }
-        mkdir build
-        cd build
-        cmake .. -GNinja `
-          -DCMAKE_TOOLCHAIN_FILE="$vcpkgToolchain" `
-          -DPYTHON_EXECUTABLE="C:\Python310\python.exe" `
-          -DWITH_GPU=OFF `
-          -DWITH_ONEDNN=ON `
-          -DCMAKE_BUILD_TYPE=Release `
-          -DWITH_UNITY_BUILD=ON `
-          -DWITH_TESTING=OFF `
-          -DWITH_PYTHON=OFF `
-          -DON_INFER=ON
-        if ($LASTEXITCODE -ne 0) { exit 1 }
-        ninja -j4
-        ninja install
-        if ($LASTEXITCODE -ne 0) { exit 1 }
-        Write-Output "Paddle Inference built. Lib dir: C:\paddle_source\build\paddle_inference_install_dir\paddle\lib"
-        # 验证
-        Get-ChildItem "C:\paddle_source\build\paddle_inference_install_dir\paddle\lib\*.dll"
-
+    
     - name: Download dirent.h and copy to VS include
       shell: powershell
       run: |
         Invoke-WebRequest -Uri "https://paddleocr.bj.bcebos.com/deploy/cpp_infer/cpp_files/dirent.h" -OutFile "dirent.h" -UseBasicParsing
         # 硬编码 VS 路径
-        $vsInstallDir = "C:\Program Files\Microsoft Visual Studio\2022\Enterprise"
+        $vsInstallDir = "C:\Program Files\Microsoft Visual Studio\2022\Enterprise"      
         $vsInclude = "$vsInstallDir\VC\Auxiliary\VS\include"
+        # 使用环境变量获取 VS 路径，比硬编码更安全
+        #$vsInclude = "$env:VCINSTALLDIR\Auxiliary\VS\include"  
         if (!(Test-Path $vsInclude)) { 
           New-Item -ItemType Directory -Path $vsInclude -Force | Out-Null
           Write-Output "Created VS include dir: $vsInclude"
@@ -121,7 +94,7 @@ jobs:
         if (!(Test-Path $localInclude)) { mkdir $localInclude -Force }
         Copy-Item "dirent.h" -Destination $localInclude -Force
         Write-Output "Fallback: Copied to local $localInclude"
-
+    
     - name: Clone and build OpenCV 4.7.0 from source (static with freetype)
       shell: powershell
       run: |
@@ -129,9 +102,12 @@ jobs:
         $vcpkgToolchain = "$vcpkgTemp\scripts\buildsystems\vcpkg.cmake"
         $freetypeInclude = "$vcpkgTemp\installed\x64-windows-static\include"
         $freetypeLib = "$vcpkgTemp\installed\x64-windows-static\lib\freetype.lib"
+        
         git clone https://github.com/opencv/opencv.git C:\opencv_source -b 4.7.0
+        
         mkdir C:\opencv_build
         cd C:\opencv_build
+        
         cmake C:\opencv_source `
           -G "Visual Studio 17 2022" `
           -A x64 `
@@ -143,39 +119,104 @@ jobs:
           -DBUILD_opencv_world=ON `
           -DCMAKE_BUILD_TYPE=Release `
           -DCMAKE_INSTALL_PREFIX="C:\opencv_install"
+        
         if ($LASTEXITCODE -ne 0) { exit 1 }
+        
         msbuild /p:Configuration=Release /p:Platform=x64 /m /maxcpucount:4 INSTALL.vcxproj
         Write-Output "OpenCV static build completed. Install dir: C:\opencv_install"
         Select-String -Path CMakeCache.txt -Pattern "FREETYPE" | Write-Output
-
+    
+    - name: Build Paddle Inference from source
+      shell: powershell
+      run: |
+        $vcpkgTemp = "${{ runner.temp }}/vcpkg"
+        $vcpkgToolchain = "$vcpkgTemp\scripts\buildsystems\vcpkg.cmake"
+        
+        mkdir C:\paddle_source
+        cd C:\paddle_source
+        
+        git clone https://github.com/PaddlePaddle/Paddle.git .
+        git checkout release/3.3
+        
+        if ($LASTEXITCODE -ne 0) { exit 1 }
+        
+        mkdir build
+        cd build
+        
+        # -DCMAKE_SYSTEM_VERSION=10.0.20348.0 显式指定 SDK 版本有助于避免找不到头文件
+        cmake .. -GNinja `
+          -DCMAKE_TOOLCHAIN_FILE="$vcpkgToolchain" `
+          -DPYTHON_EXECUTABLE="C:\Python310\python.exe" `
+          -DWITH_GPU=OFF `
+          -DWITH_ONEDNN=ON `
+          -DCMAKE_BUILD_TYPE=Release `
+          -DWITH_UNITY_BUILD=ON `
+          -DWITH_TESTING=OFF `
+          -DWITH_PYTHON=OFF `
+          -DWITH_MKL=ON `
+          -DON_INFER=ON `
+          -DWITH_XBYAK=ON
+        
+        if ($LASTEXITCODE -ne 0) { exit 1 }
+        
+        ninja -j4
+        ninja install
+        if ($LASTEXITCODE -ne 0) { exit 1 }
+        
+        Write-Output "Paddle Inference built. Lib dir: C:\paddle_source\build\paddle_inference_install_dir\paddle\lib"
+        # 验证
+        Get-ChildItem "C:\paddle_source\build\paddle_inference_install_dir\paddle\lib\*.dll"
+    
+    - name: Clone PaddleOCR source
+      run: |
+        git clone https://github.com/PaddlePaddle/PaddleOCR.git
+        cd PaddleOCR
+        git checkout release/3.3
+        if ($LASTEXITCODE -ne 0) { exit 1 }
+    
     - name: Configure and build PaddleOCR C++ demo
       shell: powershell
       run: |
         $vcpkgTemp = "${{ runner.temp }}/vcpkg"
         $vcpkgToolchain = "$vcpkgTemp\scripts\buildsystems\vcpkg.cmake"
         $paddleLib = "C:\paddle_source\build\paddle_inference_install_dir\paddle\lib"
+        
         cd PaddleOCR\deploy\cpp_infer
+        
         mkdir build
         cd build
+        
         cmake .. -G "Visual Studio 17 2022" -A x64 `
           -DCMAKE_TOOLCHAIN_FILE="$vcpkgToolchain" `
           -DOPENCV_DIR="C:\opencv_install" `
           -DOpenCV_DIR="C:\opencv_install" `
           -DPADDLE_LIB="$paddleLib" `
           -I "PaddleOCR\deploy\cpp_infer\include"
+        
         if ($LASTEXITCODE -ne 0) { exit 1 }
+        
         msbuild ppocr.sln /p:Configuration=Release /p:Platform=x64 /m
-
+    
     - name: Copy runtime files to Release folder
       shell: powershell
       run: |
         $releaseDir = "PaddleOCR\deploy\cpp_infer\build\Release"
         if (!(Test-Path $releaseDir)) { mkdir $releaseDir }
+        
         $paddleLib = "C:\paddle_source\build\paddle_inference_install_dir\paddle\lib"
-        Copy-Item "$paddleLib\paddle_inference.dll" -Destination $releaseDir -Force
-        Copy-Item "$paddleLib\common.dll" -Destination $releaseDir -Force
+        
+        # 静态编译下可能不需要 dll，但 paddle_inference 即使 ON_INFER=ON 有时仍生成 dll
+        if (Test-Path "$paddleLib\paddle_inference.dll") {
+            Copy-Item "$paddleLib\paddle_inference.dll" -Destination $releaseDir -Force
+        }
+        if (Test-Path "$paddleLib\common.dll") {
+            Copy-Item "$paddleLib\common.dll" -Destination $releaseDir -Force
+        }
+        # 如果开启了 MKL/OneDNN，可能还需要 mkldnn.dll 或 mkl*.dll
+        Get-ChildItem "$paddleLib\*.dll" | Copy-Item -Destination $releaseDir -Force
+        
         Write-Output "Files prepared in $releaseDir"
-
+    
     - name: Upload build artifacts
       uses: actions/upload-artifact@v4
       with:
@@ -203,7 +244,7 @@ jobs:
       run: |
         cd artifacts
         zip -r ../paddleocr-build-${{ github.event.inputs.version }}.zip . --exclude "*.git*"
-
+    
     - name: Create GitHub Release
       uses: softprops/action-gh-release@v2
       with:
