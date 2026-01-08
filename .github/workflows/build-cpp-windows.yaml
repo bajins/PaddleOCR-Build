@@ -92,11 +92,6 @@ jobs:
         }
         Copy-Item "dirent.h" -Destination $vsInclude -Force
         Write-Output "Copied dirent.h to $vsInclude"
-        # Fallback
-        $localInclude = "PaddleOCR\deploy\cpp_infer\include"
-        if (!(Test-Path $localInclude)) { mkdir $localInclude -Force }
-        Copy-Item "dirent.h" -Destination $localInclude -Force
-        Write-Output "Fallback: Copied to local $localInclude"
     
     #- name: Download and Setup OpenCV 4.7.0 Pre-built
     #  shell: powershell
