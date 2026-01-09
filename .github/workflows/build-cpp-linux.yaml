@@ -31,6 +31,8 @@ jobs:
         sudo apt-get install -y libswscale-dev libjpeg-dev libpng-dev libtiff-dev libopenjp2-7-dev libhdf5-dev
         # Freetype/Harfbuzz 依赖 (用于 OpenCV 绘制中文)
         sudo apt-get install -y libfreetype6-dev libharfbuzz-dev libssl-dev
+        python3 -m pip install --upgrade pip
+        python3 -m pip install numpy setuptools wheel
     
     - name: Show working directory and disk info
       run: |
@@ -124,8 +126,12 @@ jobs:
           -DWITH_TIFF=ON \
           -DBUILD_TIFF=ON
         
+        #cmake --build build --parallel $(nproc)
+        #cmake --install build
+        cd build
         make -j$(nproc)
         make install
+        cd -
         
         # 清理以节省空间
         rm -rf opencv_source opencv_contrib *.zip
@@ -189,7 +195,12 @@ jobs:
         #  -DUSE_FREETYPE=ON \
           -DCMAKE_BUILD_TYPE=Release
         
+        #cmake --build build --parallel $(nproc)
+        #cmake --install build
+        cd build
         make -j$(nproc)
+        #make install
+        #cd -
         
         # 验证生成
         ls -lh ppocr
