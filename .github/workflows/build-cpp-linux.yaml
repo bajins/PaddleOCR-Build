@@ -189,7 +189,7 @@ jobs:
         cmake .. \
           -DPADDLE_LIB=${{ env.PADDLE_LIB_DIR }} \
           -DCMAKE_PREFIX_PATH=${{ env.OPENCV_INSTALL_DIR }} \
-          -DOPENCV_DIR=${{ env.OPENCV_INSTALL_DIR }}/lib/cmake/opencv4 \
+          -DOPENCV_DIR=${{ env.OPENCV_INSTALL_DIR }}/lib64/cmake/opencv4 \
           -DWITH_MKL=ON \
           -DWITH_GPU=OFF \
           -DWITH_STATIC_LIB=OFF \
