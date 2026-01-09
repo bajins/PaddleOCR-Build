@@ -16,8 +16,6 @@ jobs:
     # https://docs.github.com/en/actions/concepts/runners/github-hosted-runners
     # https://github.com/actions/runner-images
     runs-on: windows-latest
-    env:
-      VS_PATH: 'C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC'
 
     steps:
     - name: Checkout repository
@@ -41,16 +39,15 @@ jobs:
     - name: Show working directory and disk info
       run: |
         tree ${{ github.workspace }}
+        df -h ${{ github.workspace }}
         df -h
-        echo "${{ env.VS_PATH }}"
-        echo "$env:VS_PATH"
+        echo "${{ env.VCINSTALLDIR }}"
         echo "$env:VCINSTALLDIR"
-        
 
     - name: Setup VS Developer Environment
       shell: powershell
       run: |
-        & "$env:VS_PATH\Auxiliary\Build\vcvars64.bat"
+        & "${{ env.VCINSTALLDIR }}Auxiliary\Build\vcvars64.bat"
         Write-Output "VS Developer env ready"
     
     - name: Install Python 3.10 and deps
@@ -103,11 +100,8 @@ jobs:
       run: |
         Invoke-WebRequest -Uri "https://paddleocr.bj.bcebos.com/deploy/cpp_infer/cpp_files/dirent.h" -OutFile "dirent.h" -UseBasicParsing
         
-        # 硬编码 VS 路径   
-        $vsInclude = "$env:VS_PATH\Auxiliary\VS\include"
-        # 使用环境变量获取 VS 路径，比硬编码更安全
-        #$vsInclude = "$env:VCINSTALLDIR\Auxiliary\VS\include"  
-        if (!(Test-Path $vsInclude)) { 
+        $vsInclude = "${{ env.VCINSTALLDIR }}Auxiliary\VS\include"
+        if (!(Test-Path $vsInclude)) {
           New-Item -ItemType Directory -Path $vsInclude -Force | Out-Null
           Write-Output "Created VS include dir: $vsInclude"
         }
@@ -150,7 +144,7 @@ jobs:
         $freetypeLib = "${{ env.VCPKG_DIR }}\installed\x64-windows-static\lib\freetype.lib"
         
         $root_path="opencv"
-        Remove-Item -Path "$root_path" -Recurse -Force
+        if (Test-Path "$root_path") {Remove-Item -Path "$root_path" -Recurse -Force}
         mkdir $root_path
         cd $root_path
         
@@ -162,7 +156,7 @@ jobs:
         
         
         $build_dir=build
-        Remove-Item -Path "$build_dir" -Recurse -Force
+        if (Test-Path "$build_dir") {Remove-Item -Path "$build_dir" -Recurse -Force}
         mkdir $build_dir
         cd $build_dir
         
@@ -255,7 +249,7 @@ jobs:
         cd ${{ env.CPP_INFER_DIR }}
         
         $build_dir=build
-        Remove-Item -Path "$build_dir" -Recurse -Force
+        if (Test-Path "$build_dir") {Remove-Item -Path "$build_dir" -Recurse -Force}
         mkdir $build_dir
         cd $build_dir
         
