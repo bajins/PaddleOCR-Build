@@ -42,7 +42,7 @@ jobs:
         df -h ${{ github.workspace }}
         df -h
         echo "${{ env.VCINSTALLDIR }}"
-        echo "$env:VCINSTALLDIR"
+        printenv
 
     - name: Setup VS Developer Environment
       shell: powershell
@@ -160,7 +160,7 @@ jobs:
         # -S <path-to-source>：指定源码根目录（即包含 CMakeLists.txt 的顶级目录）
         # -B <path-to-build>：指定构建目录（生成的工程文件存放位置）
         # 注意：BUILD_ZLIB/PNG/JPEG/TIFF 必须设为 OFF，强制使用 vcpkg 提供的版本，防止符号冲突
-        cmake -S opencv_source -B build `
+        cmake -S "opencv_source" -B "build" `
           -G "Visual Studio 17 2022" `
           -A x64 `
           -DCMAKE_TOOLCHAIN_FILE="${{ env.VCPKG_TOOLCHAIN }}" `
@@ -249,7 +249,7 @@ jobs:
         # CMake ≥ 3.13.0
         # -S <path-to-source>：指定源码根目录（即包含 CMakeLists.txt 的顶级目录）
         # -B <path-to-build>：指定构建目录（生成的工程文件存放位置）
-        cmake -S . -B build
+        cmake -S "." -B "build" `
           -G "Visual Studio 17 2022"`
           -A x64 `
           -DCMAKE_TOOLCHAIN_FILE="${{ env.VCPKG_TOOLCHAIN }}" `
