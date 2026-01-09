@@ -37,6 +37,7 @@ jobs:
         tree ${{ github.workspace }}
         df -h ${{ github.workspace }}
         df -h
+        python --version
     
     # -----------------------------------------------------------------------
     # 构建 OpenCV (静态库 + Freetype 支持)
@@ -81,6 +82,8 @@ jobs:
         
         echo "OPENCV_INSTALL_DIR=${{ github.workspace }}/${root_path}/install" >> $GITHUB_ENV
         
+        echo "${{ env.OPENCV_INSTALL_DIR }}"
+        
         # https://github.com/PaddlePaddle/PaddleOCR/raw/refs/heads/main/deploy/cpp_infer/tools/build_opencv.sh
         cmake ../opencv_source \
           -DCMAKE_BUILD_TYPE=Release \
@@ -99,6 +102,7 @@ jobs:
           -DBUILD_TESTS=OFF \
           -DBUILD_PERF_TESTS=OFF \
           -DBUILD_EXAMPLES=OFF \
+          -DBUILD_opencv_sfm=OFF \
           -DBUILD_opencv_apps=OFF \
           -DBUILD_opencv_gapi=OFF \
           \
