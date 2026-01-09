@@ -32,19 +32,35 @@ jobs:
         # Freetype/Harfbuzz 依赖 (用于 OpenCV 绘制中文)
         sudo apt-get install -y libfreetype6-dev libharfbuzz-dev libssl-dev
     
+    - name: Show working directory and disk info
+      run: |
+        tree ${{ github.workspace }}
+        df -h
+    
     # -----------------------------------------------------------------------
     # 构建 OpenCV (静态库 + Freetype 支持)
     # -----------------------------------------------------------------------
-    - name: Cache OpenCV Build
-      id: cache-opencv
-      uses: actions/cache@v3
-      with:
-        path: opencv_install
-        key: ${{ runner.os }}-opencv-4.7.0-freetype-v2
+    # 使用 Cache 在不同 Job、Workflow Run 之间共享文件，总容量最大10GB，7天内要访问到一次，否则会被清理
+    #- name: Cache OpenCV Build
+    #  id: cache-opencv
+    #  uses: actions/cache@v3
+    #  with:
+    #    # 后续使用${{ github.workspace }}获取根目录
+    #    path: opencv_install
+    #    # echo "hash=$(git rev-parse HEAD)" >> $GITHUB_OUTPUT
+    #    # 或者用整个目录内容 hash（如果非 git）
+    #    # echo "hash=$(find . -type f -exec sha256sum {} \; | sha2516sum | cut -d' ' -f1)" >> $GITHUB_OUTPUT
+    #    # ${{ hashFiles('opencv_source/*') }}
+    #    key: ${{ runner.os }}-opencv-4.7.0-${{ steps.opencv-hash.outputs.hash }}
 
-    - name: Clone and Build OpenCV 4.7.0
-      if: steps.cache-opencv.outputs.cache-hit != 'true'
+    - name: Build OpenCV 4.7.0
+      #if: steps.cache-opencv.outputs.cache-hit != 'true'
       run: |
+        root_path="opencv"
+        rm -rf ${root_path}
+        mkdir ${root_path}
+        cd ${root_path}
+        
         OPENCV_VER="4.7.0"
         
         git clone https://github.com/opencv/opencv.git opencv_source -b ${OPENCV_VER} --depth 1
@@ -59,13 +75,17 @@ jobs:
         #wget -q https://github.com/opencv/opencv_contrib/archive/${OPENCV_VER}.zip -O opencv_contrib.zip
         #unzip -q opencv_contrib.zip && mv opencv_contrib-${OPENCV_VER} opencv_contrib
         
-        mkdir -p opencv_build
-        cd opencv_build
+        build_dir=build
+        rm -rf ${build_dir}
+        mkdir ${build_dir}
+        cd ${build_dir}
+        
+        echo "OPENCV_INSTALL_DIR=${{ github.workspace }}/${root_path}/install" >> $GITHUB_ENV
         
         # https://github.com/PaddlePaddle/PaddleOCR/raw/refs/heads/main/deploy/cpp_infer/tools/build_opencv.sh
         cmake ../opencv_source \
           -DCMAKE_BUILD_TYPE=Release \
-          -DCMAKE_INSTALL_PREFIX=${{ github.workspace }}/opencv_install \
+          -DCMAKE_INSTALL_PREFIX=${{ env.OPENCV_INSTALL_DIR }} \
           -DOPENCV_EXTRA_MODULES_PATH=../opencv_contrib/modules \
           -DBUILD_opencv_freetype=ON \
           -DWITH_FREETYPE=ON \
@@ -95,76 +115,55 @@ jobs:
         make install
         
         # 清理以节省空间
-        cd .. && rm -rf opencv_source opencv_contrib opencv_build *.zip
+        cd ..
+        rm -rf opencv_source opencv_contrib ${build_dir} *.zip
+    
+    - name: Show OpenCV directory
+      run: |
+        tree ${{ github.workspace }}/opencv
     
     # -----------------------------------------------------------------------
-    # 选项 A: 下载官方预编译 Paddle Inference 库 (推荐，速度快)
+    # 从源码编译 https://www.paddlepaddle.org.cn/inference/v3.0/guides/install/compile/source_compile_under_Linux.html
+    # git clone https://github.com/PaddlePaddle/Paddle.git paddle_source -b release/3.3 --depth 1
+    
+    # 下载官方预编译 Paddle Inference 库 (推荐，速度快)
     # -----------------------------------------------------------------------
     - name: Download Paddle Inference Library (Linux CPU)
       run: |
-        mkdir -p paddle_inference_lib
-        cd paddle_inference_lib
         # 下载 Paddle Inference (GCC 8.2, CPU, MKL/OpenBLAS)
         # https://www.paddlepaddle.org.cn/inference/v3.0/guides/install/download_lib.html
         wget -q https://paddle-inference-lib.bj.bcebos.com/3.2.2/cxx_c/Linux/CPU/gcc8.2_avx_mkl/paddle_inference.tgz
+        
         tar -xf paddle_inference.tgz
-        # 结构通常是: paddle_inference/paddle/lib
+        
         echo "PADDLE_LIB_DIR=$(pwd)/paddle_inference" >> $GITHUB_ENV
+        
         # 验证
-        ls -R paddle_inference/paddle/lib
+        tree paddle_inference/paddle/lib
+        
     
-    # -----------------------------------------------------------------------
-    # 选项 B: 从源码编译 Paddle Inference (如果不使用预编译库，取消下方注释)
-    # 注意: 在 GitHub Actions 免费 runner 上极易超时或内存溢出
-    # https://www.paddlepaddle.org.cn/inference/v3.0/guides/install/compile/source_compile_under_Linux.html
-    # -----------------------------------------------------------------------
-    # - name: Clone Paddle Source
-    #   run: |
-    #     git clone https://github.com/PaddlePaddle/Paddle.git paddle_source -b release/3.3 --depth 1
-    #
-    # - name: Build Paddle Inference from Source
-    #   working-directory: paddle_source
-    #   run: |
-    #     mkdir build && cd build
-    #     cmake .. \
-    #       -DWITH_GPU=OFF \
-    #       -DWITH_MKL=ON \
-    #       -DWITH_TENSORRT=OFF \
-    #       -DON_INFER=ON \
-    #       -DWITH_PYTHON=OFF \
-    #       -DCMAKE_BUILD_TYPE=Release
-    #     make -j$(nproc)
-    #     make inference_lib_dist
-    #     echo "PADDLE_LIB_DIR=$(pwd)/paddle_inference" >> $GITHUB_ENV
-
-
     # -----------------------------------------------------------------------
     # 编译 PaddleOCR C++ Demo
     # 参考文档: https://www.paddleocr.ai/main/version3.x/deployment/cpp/OCR.html#step-2
     # -----------------------------------------------------------------------
-    - name: Clone PaddleOCR
-      #uses: actions/checkout@v4
-      #with:
-      #  repository: PaddlePaddle/PaddleOCR
-      #  ref: v3.3.2
-      #  path: PaddleOCR
+    #- name: Clone PaddleOCR
+    #  uses: actions/checkout@v4
+    #  with:
+    #    repository: PaddlePaddle/PaddleOCR
+    #    ref: v3.3.2
+    #    path: PaddleOCR
+    
+    - name: Build PaddleOCR C++ Demo
       run: |
         git clone https://github.com/PaddlePaddle/PaddleOCR.git -b release/3.3 --depth 1
         
-    - name: Configure and Build PaddleOCR C++ Demo
-      run: |
-        cd PaddleOCR/deploy/cpp_infer
+        echo "CPP_INFER_DIR=$(pwd)/PaddleOCR/deploy/cpp_infer" >> $GITHUB_ENV
+        cd ${{ env.CPP_INFER_DIR }}
         
-        # 如果使用的是预编译库，库结构可能略有不同
-        # 预编译库路径: $PADDLE_LIB_DIR/paddle/lib/libpaddle_inference.so
-        # OpenCV 路径: ${{ github.workspace }}/opencv_install
-        #tree -d ${{ env.PADDLE_LIB_DIR }}
-        tree ${{ github.workspace }}/opencv_install/lib/cmake/opencv4
-        
-        BUILD_DIR=build
-        rm -rf ${BUILD_DIR}
-        mkdir ${BUILD_DIR}
-        cd ${BUILD_DIR}
+        build_dir=build
+        rm -rf ${build_dir}
+        mkdir ${build_dir}
+        cd ${build_dir}
         
         # https://github.com/PaddlePaddle/PaddleOCR/raw/refs/heads/main/deploy/cpp_infer/tools/build.sh
         # PADDLE_LIB: 指向 paddle_inference 文件夹根目录
@@ -172,8 +171,8 @@ jobs:
         # WITH_MKL=ON: 必须开启，因为下载的 inference lib 是 MKL 版
         cmake .. \
           -DPADDLE_LIB=${{ env.PADDLE_LIB_DIR }} \
-          -DCMAKE_PREFIX_PATH=${{ github.workspace }}/opencv_install \
-          -DOPENCV_DIR=${{ github.workspace }}/opencv_install/lib/cmake/opencv4 \
+          -DCMAKE_PREFIX_PATH=${{ env.OPENCV_INSTALL_DIR }} \
+          -DOPENCV_DIR=${{ env.OPENCV_INSTALL_DIR }}/lib/cmake/opencv4 \
           -DWITH_MKL=ON \
           -DWITH_GPU=OFF \
           -DWITH_STATIC_LIB=OFF \
@@ -199,12 +198,11 @@ jobs:
         BASE_DIR=$PKG_NAME
         
         # 1. 复制可执行文件
-        cp PaddleOCR/deploy/cpp_infer/build/ppocr $BASE_DIR/
+        cp ${{ env.CPP_INFER_DIR }}/build/ppocr $BASE_DIR/
         
         # 2. 复制配置和资源文件
-        cp PaddleOCR/deploy/cpp_infer/tools/config.txt $BASE_DIR/config/ || true
-        cp PaddleOCR/deploy/cpp_infer/tools/*.txt $BASE_DIR/ || true
-        # 3.x 版本通常需要 tools 下的一些辅助文件
+        cp ${{ env.CPP_INFER_DIR }}/tools/config.txt $BASE_DIR/config/ || true
+        cp ${{ env.CPP_INFER_DIR }}/tools/*.txt $BASE_DIR/ || true
         
         # 3. 复制 Paddle 依赖库 (.so)
         # Paddle 核心库
@@ -218,7 +216,7 @@ jobs:
         find $THIRD_PARTY -name "libiomp5.so" -exec cp {} $BASE_DIR/lib/ \;
         
         # 4. 复制 OpenCV 库
-        cp -L ${{ github.workspace }}/opencv_install/lib/*.so* $BASE_DIR/lib/
+        cp -L ${{ env.OPENCV_INSTALL_DIR }}/lib/*.so* $BASE_DIR/lib/
         
         # 5. 创建启动脚本 run.sh (自动设置 LD_LIBRARY_PATH)
         echo '#!/bin/bash' > $BASE_DIR/run.sh
