@@ -122,9 +122,7 @@ jobs:
           -DWITH_PNG=ON \
           -DBUILD_PNG=ON \
           -DWITH_TIFF=ON \
-          -DBUILD_TIFF=ON \
-          \
-          2>&1 | grep -E "(CMake Error|Could NOT find|Failed|error:)" --color=never
+          -DBUILD_TIFF=ON
         
         make -j$(nproc)
         make install
