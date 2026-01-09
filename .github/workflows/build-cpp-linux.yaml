@@ -35,6 +35,7 @@ jobs:
     - name: Show working directory and disk info
       run: |
         tree ${{ github.workspace }}
+        df -h ${{ github.workspace }}
         df -h
     
     # -----------------------------------------------------------------------
