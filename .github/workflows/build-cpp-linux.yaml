@@ -86,7 +86,7 @@ jobs:
         cmake -S opencv_source -B build \
           -DCMAKE_BUILD_TYPE=Release \
           -DCMAKE_INSTALL_PREFIX=${OPENCV_INSTALL_DIR} \
-          -DOPENCV_EXTRA_MODULES_PATH=./opencv_contrib/modules \
+          -DOPENCV_EXTRA_MODULES_PATH=opencv_contrib/modules \
           -DBUILD_SHARED_LIBS=ON \
           -DCMAKE_INSTALL_LIBDIR=lib64 \
           -DWITH_FREETYPE=ON \
