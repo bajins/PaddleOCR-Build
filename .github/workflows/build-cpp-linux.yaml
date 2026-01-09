@@ -125,12 +125,17 @@ jobs:
           -DBUILD_PNG=ON \
           -DWITH_TIFF=ON \
           -DBUILD_TIFF=ON
+          
+        if ($LASTEXITCODE -ne 0) { exit 1 }
         
         #cmake --build build --parallel $(nproc)
         #cmake --install build
         cd build
         make -j$(nproc)
         make install
+        
+        if ($LASTEXITCODE -ne 0) { exit 1 }
+        
         cd -
         
         # 清理以节省空间
@@ -138,7 +143,7 @@ jobs:
     
     - name: Show OpenCV directory
       run: |
-        tree ${{ github.workspace }}/opencv
+        tree ${{ github.workspace }}/opencv/install
     
     # -----------------------------------------------------------------------
     # 从源码编译 https://www.paddlepaddle.org.cn/inference/v3.0/guides/install/compile/source_compile_under_Linux.html
@@ -186,7 +191,7 @@ jobs:
         # WITH_MKL=ON: 必须开启，因为下载的 inference lib 是 MKL 版
         cmake -S . -B build \
           -DPADDLE_LIB=${{ env.PADDLE_LIB_DIR }} \
-          -DCMAKE_PREFIX_PATH=${{ env.OPENCV_INSTALL_DIR }} \
+          -DCMAKE_PREFIX_PATH=${{ env.OPENCV_INSTALL_DIR }}/lib64/cmake/opencv4 \
           -DOPENCV_DIR=${{ env.OPENCV_INSTALL_DIR }}/lib64/cmake/opencv4 \
           -DWITH_MKL=ON \
           -DWITH_GPU=OFF \
@@ -195,11 +200,12 @@ jobs:
         #  -DUSE_FREETYPE=ON \
           -DCMAKE_BUILD_TYPE=Release
         
-        #cmake --build build --parallel $(nproc)
-        #cmake --install build
+        if ($LASTEXITCODE -ne 0) { exit 1 }
+        
         cd build
         make -j$(nproc)
-        #make install
+        #cmake --install build
+        if ($LASTEXITCODE -ne 0) { exit 1 }
         #cd -
         
         # 验证生成
