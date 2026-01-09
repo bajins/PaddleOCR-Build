@@ -155,7 +155,7 @@ jobs:
         git clone https://github.com/opencv/opencv_contrib.git opencv_contrib -b $OPENCV_VER --depth 1
         
         
-        $build_dir=build
+        $build_dir="build"
         if (Test-Path "$build_dir") {Remove-Item -Path "$build_dir" -Recurse -Force}
         mkdir $build_dir
         cd $build_dir
@@ -244,11 +244,11 @@ jobs:
         
         if ($LASTEXITCODE -ne 0) { exit 1 }
         
-        Add-Content -Path $env:GITHUB_ENV -Value "CPP_INFER_DIR=$($PWD.Path)/PaddleOCR/deploy/cpp_infer" -Encoding UTF8
+        Add-Content -Path $env:GITHUB_ENV -Value "CPP_INFER_DIR=$($PWD.Path)\PaddleOCR\deploy\cpp_infer" -Encoding UTF8
         
         cd ${{ env.CPP_INFER_DIR }}
         
-        $build_dir=build
+        $build_dir="build"
         if (Test-Path "$build_dir") {Remove-Item -Path "$build_dir" -Recurse -Force}
         mkdir $build_dir
         cd $build_dir
@@ -259,7 +259,7 @@ jobs:
           -DOpenCV_DIR="${{ env.OPENCV_INSTALL_DIR }}" `
           -DPADDLE_LIB="${{ env.PADDLE_LIB_DIR }}\paddle\lib" `
         #  -DUSE_FREETYPE=ON `
-          -I "PaddleOCR\deploy\cpp_infer\include"
+          -I "${{ env.CPP_INFER_DIR }}\include"
         
         if ($LASTEXITCODE -ne 0) { exit 1 }
         
@@ -268,7 +268,7 @@ jobs:
     - name: Copy runtime files to Release folder
       shell: powershell
       run: |
-        $releaseDir = "PaddleOCR\deploy\cpp_infer\build\Release"
+        $releaseDir = "${{ env.CPP_INFER_DIR }}\build\Release"
         if (!(Test-Path $releaseDir)) { mkdir $releaseDir }
         
         $paddleLib = "${{ env.PADDLE_LIB_DIR }}\paddle\lib"
