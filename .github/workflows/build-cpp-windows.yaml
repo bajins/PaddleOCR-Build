@@ -16,6 +16,8 @@ jobs:
     # https://docs.github.com/en/actions/concepts/runners/github-hosted-runners
     # https://github.com/actions/runner-images
     runs-on: windows-latest
+    env:
+      VS_PATH: 'C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC'
 
     steps:
     - name: Checkout repository
@@ -35,11 +37,20 @@ jobs:
       uses: lukka/get-cmake@latest
       with:
         version: 3.29
+    
+    - name: Show working directory and disk info
+      run: |
+        tree ${{ github.workspace }}
+        df -h
+        echo "${{ env.VS_PATH }}"
+        echo "$env:VS_PATH"
+        echo "$env:VCINSTALLDIR"
+        
 
     - name: Setup VS Developer Environment
       shell: powershell
       run: |
-        & "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvars64.bat"
+        & "$env:VS_PATH\Auxiliary\Build\vcvars64.bat"
         Write-Output "VS Developer env ready"
     
     - name: Install Python 3.10 and deps
@@ -61,6 +72,8 @@ jobs:
       shell: powershell
       run: |
         $vcpkgTemp = "${{ runner.temp }}/vcpkg"
+        Add-Content -Path $env:GITHUB_ENV -Value "VCPKG_DIR=$vcpkgTemp" -Encoding UTF8
+        Add-Content -Path $env:GITHUB_ENV -Value "VCPKG_TOOLCHAIN=$vcpkgTemp\scripts\buildsystems\vcpkg.cmake"  -Encoding UTF8
         if (Test-Path $vcpkgTemp) { Remove-Item $vcpkgTemp -Recurse -Force }
         
         git clone https://github.com/Microsoft/vcpkg.git $vcpkgTemp --single-branch --depth 1
@@ -81,7 +94,7 @@ jobs:
         
         .\vcpkg.exe integrate install
         
-        Write-Output "vcpkg install complete. Toolchain: $vcpkgTemp\scripts\buildsystems\vcpkg.cmake"
+        Write-Output "vcpkg install complete. Toolchain: ${{ env.VCPKG_TOOLCHAIN }}"
         # 验证
         .\vcpkg.exe list | Select-String "freetype|harfbuzz|icu|graphite2"
     
@@ -89,9 +102,9 @@ jobs:
       shell: powershell
       run: |
         Invoke-WebRequest -Uri "https://paddleocr.bj.bcebos.com/deploy/cpp_infer/cpp_files/dirent.h" -OutFile "dirent.h" -UseBasicParsing
-        # 硬编码 VS 路径
-        $vsInstallDir = "C:\Program Files\Microsoft Visual Studio\2022\Enterprise"      
-        $vsInclude = "$vsInstallDir\VC\Auxiliary\VS\include"
+        
+        # 硬编码 VS 路径   
+        $vsInclude = "$env:VS_PATH\Auxiliary\VS\include"
         # 使用环境变量获取 VS 路径，比硬编码更安全
         #$vsInclude = "$env:VCINSTALLDIR\Auxiliary\VS\include"  
         if (!(Test-Path $vsInclude)) { 
@@ -130,33 +143,41 @@ jobs:
     #    echo "OpenCV_DIR=$buildDir" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
     #    echo "OPENCV_DIR=$buildDir" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
     
-    - name: Clone and build OpenCV 4.7.0 from source
+    - name: Build OpenCV 4.7.0 from source
       shell: powershell
       run: |
-        $vcpkgTemp = "${{ runner.temp }}/vcpkg"
-        $vcpkgToolchain = "$vcpkgTemp\scripts\buildsystems\vcpkg.cmake"
-        $freetypeInclude = "$vcpkgTemp\installed\x64-windows-static\include"
-        $freetypeLib = "$vcpkgTemp\installed\x64-windows-static\lib\freetype.lib"
+        $freetypeInclude = "${{ env.VCPKG_DIR }}\installed\x64-windows-static\include"
+        $freetypeLib = "${{ env.VCPKG_DIR }}\installed\x64-windows-static\lib\freetype.lib"
+        
+        $root_path="opencv"
+        Remove-Item -Path "$root_path" -Recurse -Force
+        mkdir $root_path
+        cd $root_path
         
         $OPENCV_VER="4.7.0"
         
-        git clone https://github.com/opencv/opencv.git C:\opencv_source -b $OPENCV_VER --depth 1
+        git clone https://github.com/opencv/opencv.git opencv_source -b $OPENCV_VER --depth 1
         # 下载 opencv_contrib 以支持 freetype (解决中文乱码)
-        git clone https://github.com/opencv/opencv_contrib.git C:\opencv_contrib -b $OPENCV_VER --depth 1
+        git clone https://github.com/opencv/opencv_contrib.git opencv_contrib -b $OPENCV_VER --depth 1
         
-        mkdir C:\opencv_build
-        cd C:\opencv_build
         
-        cmake C:\opencv_source `
+        $build_dir=build
+        Remove-Item -Path "$build_dir" -Recurse -Force
+        mkdir $build_dir
+        cd $build_dir
+        
+        Add-Content -Path $env:GITHUB_ENV -Value "OPENCV_INSTALL_DIR=${{ github.workspace }}/$root_path/install" -Encoding UTF8
+        
+        cmake ..\opencv_source `
           -G "Visual Studio 17 2022" `
           -A x64 `
-          -DCMAKE_TOOLCHAIN_FILE="$vcpkgToolchain" `
+          -DCMAKE_TOOLCHAIN_FILE="${{ env.VCPKG_TOOLCHAIN }}" `
           -DBUILD_SHARED_LIBS=OFF `
           -DFREETYPE_INCLUDE_DIRS="$freetypeInclude" `
           -DFREETYPE_LIBRARY="$freetypeLib" `
           -DBUILD_opencv_world=ON `
-          -DCMAKE_INSTALL_PREFIX="C:\opencv_install" `
-          -DOPENCV_EXTRA_MODULES_PATH="C:\opencv_contrib\modules" `
+          -DCMAKE_INSTALL_PREFIX="${{ env.OPENCV_INSTALL_DIR }}" `
+          -DOPENCV_EXTRA_MODULES_PATH="..\opencv_contrib\modules" `
           -DBUILD_opencv_freetype=ON `
           -DWITH_FREETYPE=ON `
           -DBUILD_TESTS=OFF `
@@ -182,127 +203,67 @@ jobs:
         if ($LASTEXITCODE -ne 0) { exit 1 }
         
         msbuild /p:Configuration=Release /p:Platform=x64 /m /maxcpucount:4 INSTALL.vcxproj
-        Write-Output "OpenCV static build completed. Install dir: C:\opencv_install"
         Select-String -Path CMakeCache.txt -Pattern "FREETYPE" | Write-Output
+        
+        # 清理以节省空间
+        cd ..
+        Remove-Item -Path "opencv_source","opencv_contrib","$build_dir","*.zip" -Recurse -Force
+    
+    - name: Show OpenCV directory
+      run: |
+        tree ${{ github.workspace }}/opencv
     
     # -----------------------------------------------------------------------
-    # 选项 A: 下载官方预编译 Paddle Inference 库 (推荐，速度快)
+    # 从源码编译 https://www.paddlepaddle.org.cn/inference/v3.0/guides/install/compile/source_compile_under_Windows.html
+    # git clone https://github.com/PaddlePaddle/Paddle.git . -b release/3.3 --depth 1
+    # -DCMAKE_TOOLCHAIN_FILE="${{ env.VCPKG_TOOLCHAIN }}"
+    # 下载官方预编译 Paddle Inference 库 (推荐，速度快)
     # -----------------------------------------------------------------------
     - name: Download Paddle Inference Library (Windows CPU)
       shell: powershell
       run: |
-        # 1. 创建目录
-        $workDir = "paddle_inference_lib"
-        if (Test-Path $workDir) { Remove-Item $workDir -Recurse -Force }
-        New-Item -ItemType Directory -Path $workDir -Force | Out-Null
-        cd $workDir
-
-        # 2. 下载 Paddle Inference (Windows CPU, MKL, VS2019)
+        # 下载 Paddle Inference (Windows CPU, MKL, VS2019)
         # https://www.paddlepaddle.org.cn/inference/v3.0/guides/install/download_lib.html#windows
         # 注意：VS2019 编译的库通常兼容 VS2022
         $url = "https://paddle-inference-lib.bj.bcebos.com/3.2.2/cxx_c/Windows/CPU/x86-64_avx-mkl-vs2019/paddle_inference.zip"
         $zipName = "paddle_inference.zip"
         
-        Write-Output "Downloading from $url..."
         Invoke-WebRequest -Uri $url -OutFile $zipName -UseBasicParsing
 
-        # 3. 解压 Zip 文件
-        Write-Output "Extracting $zipName..."
+        # 解压 Zip 文件
         Expand-Archive -Path $zipName -DestinationPath paddle_inference -Force
 
-        # 4. 设置环境变量 PADDLE_LIB_DIR
+        # 设置环境变量 PADDLE_LIB_DIR
         # 解压后通常目录结构为: paddle_inference/paddle/lib
         $extractRoot = Resolve-Path "paddle_inference"
         $fullPath = $extractRoot.Path
         
         # 将路径写入 GITHUB_ENV 供后续步骤使用
-        echo "PADDLE_LIB_DIR=$fullPath" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+        Add-Content -Path $env:GITHUB_ENV -Value "PADDLE_LIB_DIR=$fullPath" -Encoding UTF8
         
-        # 5. 验证文件存在
-        Write-Output "Paddle Inference installed to: $fullPath"
-        if (Test-Path "$fullPath\paddle\lib\paddle_inference.lib") {
-            Write-Output "Verification Success: paddle_inference.lib found."
-            Get-ChildItem "$fullPath\paddle\lib"
-        } else {
-            Write-Error "Verification Failed: paddle_inference.lib not found!"
-            exit 1
-        }
-    
-    # -----------------------------------------------------------------------
-    # 选项 B: 从源码编译 Paddle Inference (如果不使用预编译库，取消下方注释)
-    # 注意: 在 GitHub Actions 免费 runner 上极易超时或内存溢出
-    # https://www.paddlepaddle.org.cn/inference/v3.0/guides/install/compile/source_compile_under_Windows.html
-    # -----------------------------------------------------------------------
-    #- name: Build Paddle Inference from source
-    #  shell: powershell
-    #  run: |
-    #    $vcpkgTemp = "${{ runner.temp }}/vcpkg"
-    #    $vcpkgToolchain = "$vcpkgTemp\scripts\buildsystems\vcpkg.cmake"
-    #    
-    #    mkdir C:\paddle_source
-    #    cd C:\paddle_source
-    #    
-    #    git clone https://github.com/PaddlePaddle/Paddle.git . -b release/3.3 --depth 1
-    #    
-    #    if ($LASTEXITCODE -ne 0) { exit 1 }
-    #    
-    #    mkdir build
-    #    cd build
-    #    
-    #    # -DCMAKE_SYSTEM_VERSION=10.0.20348.0 显式指定 SDK 版本有助于避免找不到头文件
-    #    cmake .. -GNinja `
-    #      -DCMAKE_TOOLCHAIN_FILE="$vcpkgToolchain" `
-    #      -DPYTHON_EXECUTABLE="C:\Python310\python.exe" `
-    #      -DWITH_GPU=OFF `
-    #      -DWITH_ONEDNN=ON `
-    #      -DCMAKE_BUILD_TYPE=Release `
-    #      -DWITH_UNITY_BUILD=ON `
-    #      -DWITH_TESTING=OFF `
-    #      -DWITH_PYTHON=OFF `
-    #      -DWITH_MKL=ON `
-    #      -DON_INFER=ON `
-    #      -DWITH_XBYAK=ON
-    #    
-    #    if ($LASTEXITCODE -ne 0) { exit 1 }
-    #    
-    #    ninja -j4
-    #    ninja install
-    #    if ($LASTEXITCODE -ne 0) { exit 1 }
-    #
-    #    $extractRoot = Resolve-Path "paddle_inference_install_dir"
-    #    $fullPath = $extractRoot.Path
-    #    # 将路径写入 GITHUB_ENV 供后续步骤使用
-    #    echo "PADDLE_LIB_DIR=$fullPath" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-    #    
-    #    Write-Output "Paddle Inference built. Lib dir: $fullPath\paddle\lib"
-    #    # 验证
-    #    Get-ChildItem "$fullPath\paddle\lib\*.dll"
-    
-    - name: Clone PaddleOCR source
-      run: |
-        git clone https://github.com/PaddlePaddle/PaddleOCR.git -b release/3.3 --depth 1
-        if ($LASTEXITCODE -ne 0) { exit 1 }
-    
-    - name: Configure and build PaddleOCR C++ demo
+        tree "$fullPath"
+        
+    - name: Build PaddleOCR C++ Demo
       shell: powershell
       run: |
-        $vcpkgTemp = "${{ runner.temp }}/vcpkg"
-        $vcpkgToolchain = "$vcpkgTemp\scripts\buildsystems\vcpkg.cmake"
-        $paddleLib = "${{ env.PADDLE_LIB_DIR }}\paddle\lib"
+        git clone https://github.com/PaddlePaddle/PaddleOCR.git -b release/3.3 --depth 1
         
-        cd PaddleOCR\deploy\cpp_infer
+        if ($LASTEXITCODE -ne 0) { exit 1 }
         
-        tree ${{ env.PADDLE_LIB_DIR }}
-        tree C:\opencv_install
+        Add-Content -Path $env:GITHUB_ENV -Value "CPP_INFER_DIR=$($PWD.Path)/PaddleOCR/deploy/cpp_infer" -Encoding UTF8
         
-        mkdir build
-        cd build
+        cd ${{ env.CPP_INFER_DIR }}
+        
+        $build_dir=build
+        Remove-Item -Path "$build_dir" -Recurse -Force
+        mkdir $build_dir
+        cd $build_dir
         
         cmake .. -G "Visual Studio 17 2022" -A x64 `
-          -DCMAKE_TOOLCHAIN_FILE="$vcpkgToolchain" `
-          -DOPENCV_DIR="C:\opencv_install" `
-          -DOpenCV_DIR="C:\opencv_install" `
-          -DPADDLE_LIB="$paddleLib" `
+          -DCMAKE_TOOLCHAIN_FILE="${{ env.VCPKG_TOOLCHAIN }}" `
+          -DOPENCV_DIR="${{ env.OPENCV_INSTALL_DIR }}" `
+          -DOpenCV_DIR="${{ env.OPENCV_INSTALL_DIR }}" `
+          -DPADDLE_LIB="${{ env.PADDLE_LIB_DIR }}\paddle\lib" `
         #  -DUSE_FREETYPE=ON `
           -I "PaddleOCR\deploy\cpp_infer\include"
         
@@ -330,14 +291,16 @@ jobs:
         
         Write-Output "Files prepared in $releaseDir"
     
+    # 使用 Artifacts 在不同 同一个Workflow Run 的 Job 之间共享文件，单个最大10GB
     - name: Upload build artifacts
       uses: actions/upload-artifact@v4
       with:
         name: paddleocr-cpp-windows-static-build
         path: |
-          PaddleOCR/deploy/cpp_infer/build/Release/
-          C:\opencv_install/
+          ${{ env.CPP_INFER_DIR }}/build/Release/
+          ${{ env.OPENCV_INSTALL_DIR }}/
           ${{ env.PADDLE_LIB_DIR }}/
+        # 最多保留 90 天
         retention-days: 7
 
   release:
