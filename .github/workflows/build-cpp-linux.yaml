@@ -75,16 +75,14 @@ jobs:
         #wget -q https://github.com/opencv/opencv_contrib/archive/${OPENCV_VER}.zip -O opencv_contrib.zip
         #unzip -q opencv_contrib.zip && mv opencv_contrib-${OPENCV_VER} opencv_contrib
         
-        build_dir=build
-        rm -rf ${build_dir}
-        mkdir ${build_dir}
-        cd ${build_dir}
-        
         OPENCV_INSTALL_DIR="${{ github.workspace }}/${root_path}/install"
         echo "OPENCV_INSTALL_DIR=${OPENCV_INSTALL_DIR}" >> $GITHUB_ENV
                 
         # https://github.com/PaddlePaddle/PaddleOCR/raw/refs/heads/main/deploy/cpp_infer/tools/build_opencv.sh
-        cmake ../opencv_source \
+        # CMake ≥ 3.13.0
+        # -S <path-to-source>：指定源码根目录（即包含 CMakeLists.txt 的顶级目录）
+        # -B <path-to-build>：指定构建目录（生成的工程文件存放位置）
+        cmake -S opencv_source -B build \
           -DCMAKE_BUILD_TYPE=Release \
           -DCMAKE_INSTALL_PREFIX=${OPENCV_INSTALL_DIR} \
           -DOPENCV_EXTRA_MODULES_PATH=../opencv_contrib/modules \
@@ -177,16 +175,12 @@ jobs:
         echo "CPP_INFER_DIR=${CPP_INFER_DIR}" >> $GITHUB_ENV
         cd ${CPP_INFER_DIR}
         
-        build_dir=build
-        rm -rf ${build_dir}
-        mkdir ${build_dir}
-        cd ${build_dir}
-        
         # https://github.com/PaddlePaddle/PaddleOCR/raw/refs/heads/main/deploy/cpp_infer/tools/build.sh
-        # PADDLE_LIB: 指向 paddle_inference 文件夹根目录
-        # OPENCV_DIR: 指向包含 OpenCVConfig.cmake 的文件夹
+        # CMake ≥ 3.13.0
+        # -S <path-to-source>：指定源码根目录（即包含 CMakeLists.txt 的顶级目录）
+        # -B <path-to-build>：指定构建目录（生成的工程文件存放位置）
         # WITH_MKL=ON: 必须开启，因为下载的 inference lib 是 MKL 版
-        cmake .. \
+        cmake -S . -B build \
           -DPADDLE_LIB=${{ env.PADDLE_LIB_DIR }} \
           -DCMAKE_PREFIX_PATH=${{ env.OPENCV_INSTALL_DIR }} \
           -DOPENCV_DIR=${{ env.OPENCV_INSTALL_DIR }}/lib64/cmake/opencv4 \
