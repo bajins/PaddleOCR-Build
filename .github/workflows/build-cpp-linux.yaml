@@ -38,6 +38,7 @@ jobs:
         df -h ${{ github.workspace }}
         df -h
         python --version
+        cmake --version
     
     # -----------------------------------------------------------------------
     # 构建 OpenCV (静态库 + Freetype 支持)
@@ -82,7 +83,7 @@ jobs:
         # CMake ≥ 3.13.0
         # -S <path-to-source>：指定源码根目录（即包含 CMakeLists.txt 的顶级目录）
         # -B <path-to-build>：指定构建目录（生成的工程文件存放位置）
-        cmake -S opencv_source -B build \
+        cmake -S ./opencv_source -B build \
           -DCMAKE_BUILD_TYPE=Release \
           -DCMAKE_INSTALL_PREFIX=${OPENCV_INSTALL_DIR} \
           -DOPENCV_EXTRA_MODULES_PATH=../opencv_contrib/modules \
@@ -129,7 +130,6 @@ jobs:
         make install
         
         # 清理以节省空间
-        cd ..
         rm -rf opencv_source opencv_contrib ${build_dir} *.zip
     
     - name: Show OpenCV directory
