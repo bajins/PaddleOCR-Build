@@ -138,11 +138,11 @@ jobs:
         $freetypeInclude = "$vcpkgTemp\installed\x64-windows-static\include"
         $freetypeLib = "$vcpkgTemp\installed\x64-windows-static\lib\freetype.lib"
         
-        OPENCV_VER="4.7.0"
+        $OPENCV_VER="4.7.0"
         
-        git clone https://github.com/opencv/opencv.git C:\opencv_source -b ${OPENCV_VER} --depth 1
+        git clone https://github.com/opencv/opencv.git C:\opencv_source -b $OPENCV_VER --depth 1
         # 下载 opencv_contrib 以支持 freetype (解决中文乱码)
-        git clone https://github.com/opencv/opencv_contrib.git C:\opencv_contrib -b ${OPENCV_VER} --depth 1
+        git clone https://github.com/opencv/opencv_contrib.git C:\opencv_contrib -b $OPENCV_VER --depth 1
         
         mkdir C:\opencv_build
         cd C:\opencv_build
