@@ -91,7 +91,6 @@ jobs:
         
         .\vcpkg.exe integrate install
         
-        Write-Output "vcpkg install complete. Toolchain: ${{ env.VCPKG_TOOLCHAIN }}"
         # 验证
         .\vcpkg.exe list | Select-String "freetype|harfbuzz|icu|graphite2"
     
@@ -160,7 +159,8 @@ jobs:
         mkdir $build_dir
         cd $build_dir
         
-        Add-Content -Path $env:GITHUB_ENV -Value "OPENCV_INSTALL_DIR=${{ github.workspace }}/$root_path/install" -Encoding UTF8
+        $OPENCV_INSTALL_DIR="${{ github.workspace }}/$root_path/install"
+        Add-Content -Path $env:GITHUB_ENV -Value "OPENCV_INSTALL_DIR=$OPENCV_INSTALL_DIR" -Encoding UTF8
         
         cmake ..\opencv_source `
           -G "Visual Studio 17 2022" `
@@ -170,7 +170,7 @@ jobs:
           -DFREETYPE_INCLUDE_DIRS="$freetypeInclude" `
           -DFREETYPE_LIBRARY="$freetypeLib" `
           -DBUILD_opencv_world=ON `
-          -DCMAKE_INSTALL_PREFIX="${{ env.OPENCV_INSTALL_DIR }}" `
+          -DCMAKE_INSTALL_PREFIX="$OPENCV_INSTALL_DIR" `
           -DOPENCV_EXTRA_MODULES_PATH="..\opencv_contrib\modules" `
           -DBUILD_opencv_freetype=ON `
           -DWITH_FREETYPE=ON `
@@ -192,7 +192,9 @@ jobs:
           -DBUILD_PNG=ON `
           -DWITH_TIFF=ON `
           -DBUILD_TIFF=ON `
-          -DCMAKE_BUILD_TYPE=Release
+          -DCMAKE_BUILD_TYPE=Release `
+          `
+          2>&1 | Select-String -Pattern "CMake Error|Could NOT find|Failed|error:"
         
         if ($LASTEXITCODE -ne 0) { exit 1 }
         
@@ -244,9 +246,10 @@ jobs:
         
         if ($LASTEXITCODE -ne 0) { exit 1 }
         
-        Add-Content -Path $env:GITHUB_ENV -Value "CPP_INFER_DIR=$($PWD.Path)\PaddleOCR\deploy\cpp_infer" -Encoding UTF8
+        $CPP_INFER_DIR="$($PWD.Path)\PaddleOCR\deploy\cpp_infer"
+        Add-Content -Path $env:GITHUB_ENV -Value "CPP_INFER_DIR=" -Encoding UTF8
         
-        cd ${{ env.CPP_INFER_DIR }}
+        cd $CPP_INFER_DIR
         
         $build_dir="build"
         if (Test-Path "$build_dir") {Remove-Item -Path "$build_dir" -Recurse -Force}
@@ -259,7 +262,7 @@ jobs:
           -DOpenCV_DIR="${{ env.OPENCV_INSTALL_DIR }}" `
           -DPADDLE_LIB="${{ env.PADDLE_LIB_DIR }}\paddle\lib" `
         #  -DUSE_FREETYPE=ON `
-          -I "${{ env.CPP_INFER_DIR }}\include"
+          -I "$CPP_INFER_DIR\include"
         
         if ($LASTEXITCODE -ne 0) { exit 1 }
         
