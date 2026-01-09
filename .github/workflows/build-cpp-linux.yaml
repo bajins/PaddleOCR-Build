@@ -80,14 +80,13 @@ jobs:
         mkdir ${build_dir}
         cd ${build_dir}
         
-        echo "OPENCV_INSTALL_DIR=${{ github.workspace }}/${root_path}/install" >> $GITHUB_ENV
-        
-        echo "${{ env.OPENCV_INSTALL_DIR }}"
-        
+        OPENCV_INSTALL_DIR="${{ github.workspace }}/${root_path}/install"
+        echo "OPENCV_INSTALL_DIR=${OPENCV_INSTALL_DIR}" >> $GITHUB_ENV
+                
         # https://github.com/PaddlePaddle/PaddleOCR/raw/refs/heads/main/deploy/cpp_infer/tools/build_opencv.sh
         cmake ../opencv_source \
           -DCMAKE_BUILD_TYPE=Release \
-          -DCMAKE_INSTALL_PREFIX=${{ env.OPENCV_INSTALL_DIR }} \
+          -DCMAKE_INSTALL_PREFIX=${OPENCV_INSTALL_DIR} \
           -DOPENCV_EXTRA_MODULES_PATH=../opencv_contrib/modules \
           -DBUILD_SHARED_LIBS=ON \
           -DCMAKE_INSTALL_LIBDIR=lib64 \
@@ -174,8 +173,9 @@ jobs:
       run: |
         git clone https://github.com/PaddlePaddle/PaddleOCR.git -b release/3.3 --depth 1
         
-        echo "CPP_INFER_DIR=$(pwd)/PaddleOCR/deploy/cpp_infer" >> $GITHUB_ENV
-        cd ${{ env.CPP_INFER_DIR }}
+        CPP_INFER_DIR="$(pwd)/PaddleOCR/deploy/cpp_infer"
+        echo "CPP_INFER_DIR=${CPP_INFER_DIR}" >> $GITHUB_ENV
+        cd ${CPP_INFER_DIR}
         
         build_dir=build
         rm -rf ${build_dir}
@@ -209,39 +209,39 @@ jobs:
     - name: Prepare Artifacts
       run: |
         PKG_NAME="paddleocr-linux-cpu-cpp"
-        mkdir -p $PKG_NAME/lib
-        mkdir -p $PKG_NAME/config
+        mkdir -p ${PKG_NAME}/lib
+        mkdir -p ${PKG_NAME}/config
         
-        BASE_DIR=$PKG_NAME
+        BASE_DIR=${PKG_NAME}
         
         # 1. 复制可执行文件
-        cp ${{ env.CPP_INFER_DIR }}/build/ppocr $BASE_DIR/
+        cp ${{ env.CPP_INFER_DIR }}/build/ppocr ${BASE_DIR}/
         
         # 2. 复制配置和资源文件
-        cp ${{ env.CPP_INFER_DIR }}/tools/config.txt $BASE_DIR/config/ || true
-        cp ${{ env.CPP_INFER_DIR }}/tools/*.txt $BASE_DIR/ || true
+        cp ${{ env.CPP_INFER_DIR }}/tools/config.txt ${BASE_DIR}/config/ || true
+        cp ${{ env.CPP_INFER_DIR }}/tools/*.txt ${BASE_DIR}/ || true
         
         # 3. 复制 Paddle 依赖库 (.so)
         # Paddle 核心库
-        cp -L ${{ env.PADDLE_LIB_DIR }}/paddle/lib/*.so* $BASE_DIR/lib/
+        cp -L ${{ env.PADDLE_LIB_DIR }}/paddle/lib/*.so* ${BASE_DIR}/lib/
         # 第三方库 (MKL, MKLDNN, IOMP5 等)
         # Paddle 结构中 third_party 通常包含这些
         THIRD_PARTY="${{ env.PADDLE_LIB_DIR }}/third_party/install"
-        [ -d "$THIRD_PARTY/mklml/lib" ] && cp -L $THIRD_PARTY/mklml/lib/*.so* $BASE_DIR/lib/
-        [ -d "$THIRD_PARTY/mkldnn/lib" ] && cp -L $THIRD_PARTY/mkldnn/lib/*.so* $BASE_DIR/lib/
+        [ -d "${THIRD_PARTY}/mklml/lib" ] && cp -L ${THIRD_PARTY}/mklml/lib/*.so* ${BASE_DIR}/lib/
+        [ -d "${THIRD_PARTY}/mkldnn/lib" ] && cp -L ${THIRD_PARTY}/mkldnn/lib/*.so* ${BASE_DIR}/lib/
         # 有时候 iomp5 在 mklml 里，有时单独
-        find $THIRD_PARTY -name "libiomp5.so" -exec cp {} $BASE_DIR/lib/ \;
+        find ${THIRD_PARTY} -name "libiomp5.so" -exec cp {} ${BASE_DIR}/lib/ \;
         
         # 4. 复制 OpenCV 库
-        cp -L ${{ env.OPENCV_INSTALL_DIR }}/lib/*.so* $BASE_DIR/lib/
+        cp -L ${{ env.OPENCV_INSTALL_DIR }}/lib/*.so* ${BASE_DIR}/lib/
         
         # 5. 创建启动脚本 run.sh (自动设置 LD_LIBRARY_PATH)
-        echo '#!/bin/bash' > $BASE_DIR/run.sh
+        echo '#!/bin/bash' > ${BASE_DIR}/run.sh
         echo 'export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:$(dirname "$(readlink -f "$0")")/lib' >> $BASE_DIR/run.sh
-        echo './ppocr "$@"' >> $BASE_DIR/run.sh
-        chmod +x $BASE_DIR/run.sh
+        echo './ppocr "$@"' >> ${BASE_DIR}/run.sh
+        chmod +x ${BASE_DIR}/run.sh
         
-        echo "Artifacts packed in $BASE_DIR"
+        echo "Artifacts packed in ${BASE_DIR}"
     
   #  - name: Upload build artifacts
   #    uses: actions/upload-artifact@v4
