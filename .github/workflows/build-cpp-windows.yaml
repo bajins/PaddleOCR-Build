@@ -187,15 +187,15 @@ jobs:
           -DBUILD_IPP_IW=OFF `
           -DWITH_LAPACK=OFF `
           -DWITH_EIGEN=OFF `
-          -DWITH_PROTBUF=OFF `
-          `
-          2>&1 | Select-String -Pattern "CMake Error|Could NOT find|Failed|error:"
+          -DWITH_PROTBUF=OFF
         
         if ($LASTEXITCODE -ne 0) { exit 1 }
         
+        cd build
         msbuild /p:Configuration=Release /p:Platform=x64 /m /maxcpucount:4 INSTALL.vcxproj
         #cmake --build build --config Release --target INSTALL --parallel 4 2>&1
         Select-String -Path CMakeCache.txt -Pattern "FREETYPE" | Write-Output
+        cd -
         
         # 清理以节省空间
         Remove-Item -Path "opencv_source","opencv_contrib","build" -Recurse -Force
@@ -267,6 +267,7 @@ jobs:
         
         if ($LASTEXITCODE -ne 0) { exit 1 }
         
+        cd build
         msbuild ppocr.sln /p:Configuration=Release /p:Platform=x64 /m
     
     - name: Copy runtime files to Release folder
