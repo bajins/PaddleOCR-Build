@@ -264,7 +264,7 @@ jobs:
           -DWITH_GPU=OFF `
           -DWITH_STATIC_LIB=OFF `
           -DWITH_TENSORRT=OFF `
-          -DCMAKE_BUILD_TYPE=Release
+          -DCMAKE_BUILD_TYPE=Release `
         #  -DUSE_FREETYPE=ON `
           -I "$CPP_INFER_DIR\include"
         
