@@ -193,9 +193,12 @@ jobs:
         
         cd build
         msbuild /p:Configuration=Release /p:Platform=x64 /m /maxcpucount:4 INSTALL.vcxproj
-        #cmake --build build --config Release --target INSTALL --parallel 4 2>&1
+        #cmake --build build --config Release --target INSTALL --parallel 4
+        
+        if ($LASTEXITCODE -ne 0) { exit 1 }
+        
         Select-String -Path CMakeCache.txt -Pattern "FREETYPE" | Write-Output
-        cd -
+        cd ..
         
         # 清理以节省空间
         Remove-Item -Path "opencv_source","opencv_contrib","build" -Recurse -Force
