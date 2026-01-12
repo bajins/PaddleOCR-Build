@@ -253,10 +253,10 @@ jobs:
         # -S <path-to-source>：指定源码根目录（即包含 CMakeLists.txt 的顶级目录）
         # -B <path-to-build>：指定构建目录（生成的工程文件存放位置）
         cmake -S "." -B "build" `
-          -G "Visual Studio 17 2022"`
+          -G "Visual Studio 17 2022" `
           -A x64 `
           -DCMAKE_TOOLCHAIN_FILE="${{ env.VCPKG_TOOLCHAIN }}" `
-          -DCMAKE_PREFIX_PATH=${{ env.OPENCV_INSTALL_DIR }} `
+          -DCMAKE_PREFIX_PATH="${{ env.OPENCV_INSTALL_DIR }}" `
           -DOPENCV_DIR="${{ env.OPENCV_INSTALL_DIR }}" `
           -DOpenCV_DIR="${{ env.OPENCV_INSTALL_DIR }}" `
           -DPADDLE_LIB="${{ env.PADDLE_LIB_DIR }}\paddle\lib" `
@@ -264,9 +264,9 @@ jobs:
           -DWITH_GPU=OFF `
           -DWITH_STATIC_LIB=OFF `
           -DWITH_TENSORRT=OFF `
-          -DCMAKE_BUILD_TYPE=Release `
+          -DCMAKE_BUILD_TYPE=Release
+        #  -I "$CPP_INFER_DIR\include"
         #  -DUSE_FREETYPE=ON `
-          -I "$CPP_INFER_DIR\include"
         
         if ($LASTEXITCODE -ne 0) { exit 1 }
         
