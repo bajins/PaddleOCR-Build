@@ -126,7 +126,7 @@ jobs:
           -DWITH_TIFF=ON \
           -DBUILD_TIFF=ON
           
-        if ($LASTEXITCODE -ne 0) { exit 1 }
+        [ $? -ne 0 ] && exit 1
         
         #cmake --build build --parallel $(nproc)
         #cmake --install build
@@ -134,7 +134,7 @@ jobs:
         make -j$(nproc)
         make install
         
-        if ($LASTEXITCODE -ne 0) { exit 1 }
+        [ $? -ne 0 ] && exit 1
         
         cd -
         
@@ -200,12 +200,12 @@ jobs:
         #  -DUSE_FREETYPE=ON \
           -DCMAKE_BUILD_TYPE=Release
         
-        if ($LASTEXITCODE -ne 0) { exit 1 }
+        [ $? -ne 0 ] && exit 1
         
         cd build
         make -j$(nproc)
         #cmake --install build
-        if ($LASTEXITCODE -ne 0) { exit 1 }
+        [ $? -ne 0 ] && exit 1
         #cd -
         
         # 验证生成
