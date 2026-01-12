@@ -125,7 +125,8 @@ jobs:
           -DBUILD_PNG=ON \
           -DWITH_TIFF=ON \
           -DBUILD_TIFF=ON
-          
+        
+        #if [ $? -ne 0 ]; then exit 1; fi
         [ $? -ne 0 ] && exit 1
         
         #cmake --build build --parallel $(nproc)
@@ -197,8 +198,8 @@ jobs:
           -DWITH_GPU=OFF \
           -DWITH_STATIC_LIB=OFF \
           -DWITH_TENSORRT=OFF \
-        #  -DUSE_FREETYPE=ON \
           -DCMAKE_BUILD_TYPE=Release
+        #  -DUSE_FREETYPE=ON \
         
         [ $? -ne 0 ] && exit 1
         
