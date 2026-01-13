@@ -38,7 +38,7 @@ jobs:
     
     - name: Show working directory and disk info
       run: |
-        tree ${{ github.workspace }}
+        tree /F ${{ github.workspace }}
         df -h ${{ github.workspace }}
         df -h
         echo "${{ env.VCINSTALLDIR }}"
@@ -204,8 +204,9 @@ jobs:
         Remove-Item -Path "opencv_source","opencv_contrib","build" -Recurse -Force
     
     - name: Show OpenCV directory
+      shell: powershell
       run: |
-        tree ${{ github.workspace }}/opencv
+        tree /F ${{ github.workspace }}/opencv
     
     # -----------------------------------------------------------------------
     # 从源码编译 https://www.paddlepaddle.org.cn/inference/v3.0/guides/install/compile/source_compile_under_Windows.html
@@ -235,7 +236,7 @@ jobs:
         # 将路径写入 GITHUB_ENV 供后续步骤使用
         Add-Content -Path $env:GITHUB_ENV -Value "PADDLE_LIB_DIR=$fullPath" -Encoding UTF8
         
-        tree "$fullPath"
+        tree /F "$fullPath"
         
     - name: Build PaddleOCR C++ Demo
       shell: powershell
