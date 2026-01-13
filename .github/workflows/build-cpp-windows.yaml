@@ -153,7 +153,7 @@ jobs:
         # 下载 opencv_contrib 以支持 freetype (解决中文乱码)
         git clone https://github.com/opencv/opencv_contrib.git opencv_contrib -b $OPENCV_VER --depth 1
                 
-        $OPENCV_INSTALL_DIR="${{ github.workspace }}/$root_path/install"
+        $OPENCV_INSTALL_DIR="${{ github.workspace }}\$root_path\install"
         Add-Content -Path $env:GITHUB_ENV -Value "OPENCV_INSTALL_DIR=$OPENCV_INSTALL_DIR" -Encoding UTF8
         
         # CMake ≥ 3.13.0
@@ -206,7 +206,7 @@ jobs:
     - name: Show OpenCV directory
       shell: powershell
       run: |
-        tree /F ${{ github.workspace }}/opencv
+        tree /F "${{ github.workspace }}\opencv"
     
     # -----------------------------------------------------------------------
     # 从源码编译 https://www.paddlepaddle.org.cn/inference/v3.0/guides/install/compile/source_compile_under_Windows.html
@@ -258,8 +258,8 @@ jobs:
           -A x64 `
           -DCMAKE_TOOLCHAIN_FILE="${{ env.VCPKG_TOOLCHAIN }}" `
           -DCMAKE_PREFIX_PATH="${{ env.OPENCV_INSTALL_DIR }}" `
-          -DOPENCV_DIR="${{ env.OPENCV_INSTALL_DIR }}" `
-          -DOpenCV_DIR="${{ env.OPENCV_INSTALL_DIR }}" `
+          -DOPENCV_DIR="${{ env.OPENCV_INSTALL_DIR }}\staticlib" `
+          -DOpenCV_DIR="${{ env.OPENCV_INSTALL_DIR }}\staticlib" `
           -DPADDLE_LIB="${{ env.PADDLE_LIB_DIR }}\paddle\lib" `
           -DWITH_MKL=ON `
           -DWITH_GPU=OFF `
